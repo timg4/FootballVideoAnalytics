@@ -1,0 +1,3 @@
+ultralytics
+supervision<0.30  # ByteTrack wird in 0.30 entfernt, Migration auf "trackers"-Paket steht noch aus
+gdown  # Download der Beispielvideos/Modelle von Google Drive
