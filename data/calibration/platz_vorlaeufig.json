@@ -1,0 +1,87 @@
+{
+  "video": "C:\\Users\\timgr\\OneDrive\\Dokumente\\FootballAnalytics\\data\\videos\\highlights\\03 000707_-_Goal.mp4",
+  "frame": 120,
+  "hinweis": "VORLÄUFIG: von Claude abgelesen, Platzmaße geschätzt (60x40)",
+  "pitch": {
+    "laenge": 60.0,
+    "breite": 40.0,
+    "tor_breite": 5.0,
+    "box_tiefe": 9.0,
+    "box_breite": 24.0,
+    "kreis_radius": 5.0
+  },
+  "points": [
+    {
+      "name": "Mittelpunkt (Anstosspunkt)",
+      "px": [
+        1062.0,
+        690.0
+      ],
+      "meter": [
+        30.0,
+        20.0
+      ]
+    },
+    {
+      "name": "Mittellinie x ferne Seitenlinie",
+      "px": [
+        1090.0,
+        500.0
+      ],
+      "meter": [
+        30.0,
+        0
+      ]
+    },
+    {
+      "name": "Mittellinie x nahe Seitenlinie",
+      "px": [
+        982.0,
+        1237.0
+      ],
+      "meter": [
+        30.0,
+        40.0
+      ]
+    },
+    {
+      "name": "Ecke links-fern",
+      "px": [
+        -1360.0,
+        380.0
+      ],
+      "meter": [
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Ecke rechts-fern",
+      "px": [
+        3640.0,
+        624.0
+      ],
+      "meter": [
+        60.0,
+        0
+      ]
+    }
+  ],
+  "H_pitch_to_px": [
+    [
+      80.9523844653601,
+      -18.340345740622944,
+      -1360.007195390465
+    ],
+    [
+      3.6583136233836275,
+      -1.6990000594571681,
+      380.1472033684696
+    ],
+    [
+      -0.0006541092404752057,
+      -0.015981979189159532,
+      1.0
+    ]
+  ]
+}
