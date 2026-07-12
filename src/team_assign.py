@@ -22,7 +22,7 @@ import cv2
 import numpy as np
 import supervision as sv
 
-MIN_SAMPLE_HEIGHT = 45   # Farben nur von Boxen sammeln, die groß genug sind
+MIN_SAMPLE_HEIGHT_1080 = 45  # Mindest-Boxhöhe für Farbproben, bezogen auf 1080p
 MIN_SAMPLES = 3          # Tracks mit weniger Farbproben bleiben unzugeordnet
 OTHER = 2                # class_id für alles außerhalb unseres Spiels
 
@@ -103,6 +103,8 @@ def main():
                         help="Anzahl Farbgruppen (2 Teams + Nachbarspiele/Sonstige)")
     parser.add_argument("--debug", action="store_true",
                         help="Pro Farbgruppe eine Trikot-Kachelübersicht speichern")
+    parser.add_argument("--zeige-ignorierte", action="store_true",
+                        help="Aussortierte Personen (Nachbarspiele) grau mit anzeigen")
     args = parser.parse_args()
 
     video_path = Path(args.video)
@@ -116,7 +118,10 @@ def main():
             per_frame[int(row["frame"])].append(
                 (int(row["tracker_id"]),
                  (float(row["x1"]), float(row["y1"]), float(row["x2"]), float(row["y2"]))))
-    max_frame = max(per_frame)
+    min_frame, max_frame = min(per_frame), max(per_frame)
+
+    video_info = sv.VideoInfo.from_video_path(str(video_path))
+    min_sample_height = MIN_SAMPLE_HEIGHT_1080 * video_info.height / 1080
 
     # Pass 1: Farbmerkmale (nur große Boxen) und Boxhöhen pro Track sammeln
     print("Pass 1: Trikotfarben sammeln ...")
@@ -124,12 +129,13 @@ def main():
     track_raw = defaultdict(list)
     track_heights = defaultdict(list)
     track_crops = defaultdict(list)
-    frames = sv.get_video_frames_generator(str(video_path), end=max_frame + 1)
-    for i, frame in enumerate(frames):
+    frames = sv.get_video_frames_generator(str(video_path), start=min_frame,
+                                           end=max_frame + 1)
+    for i, frame in enumerate(frames, start=min_frame):
         for tid, box in per_frame.get(i, []):
             height = box[3] - box[1]
             track_heights[tid].append(height)
-            if height < MIN_SAMPLE_HEIGHT:
+            if height < min_sample_height:
                 continue
             crop = torso_crop(frame, box)
             if crop is None:
@@ -222,11 +228,14 @@ def main():
     label_annotator = sv.LabelAnnotator(color=palette, color_lookup=sv.ColorLookup.CLASS,
                                         text_position=sv.Position.BOTTOM_CENTER, text_scale=0.4)
 
-    video_info = sv.VideoInfo.from_video_path(str(video_path))
-    frames = sv.get_video_frames_generator(str(video_path), end=max_frame + 1)
+    frames = sv.get_video_frames_generator(str(video_path), start=min_frame,
+                                           end=max_frame + 1)
     with sv.VideoSink(str(output_path), video_info) as sink:
-        for i, frame in enumerate(frames):
+        for i, frame in enumerate(frames, start=min_frame):
             entries = per_frame.get(i, [])
+            if not args.zeige_ignorierte:
+                entries = [(tid, box) for tid, box in entries
+                           if team_of[tid] != OTHER]
             if entries:
                 detections = sv.Detections(
                     xyxy=np.array([box for _, box in entries]),

@@ -68,9 +68,11 @@ def main():
             detections = sv.Detections.from_ultralytics(result)
             detections = tracker.update_with_detections(detections)
 
+            # Absolute Frame-Nummer im Video, damit nachgelagerte Schritte
+            # (Teams, Registrierung, Meter) bei --start nicht verrutschen
             for (x1, y1, x2, y2), tid, conf in zip(
                     detections.xyxy, detections.tracker_id, detections.confidence):
-                writer.writerow([i, tid, f"{x1:.1f}", f"{y1:.1f}",
+                writer.writerow([start_frame + i, tid, f"{x1:.1f}", f"{y1:.1f}",
                                  f"{x2:.1f}", f"{y2:.1f}", f"{conf:.3f}"])
 
             labels = [f"#{tracker_id}" for tracker_id in detections.tracker_id]

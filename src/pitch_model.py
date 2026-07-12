@@ -14,12 +14,14 @@ import numpy as np
 
 @dataclass
 class PitchModel:
-    laenge: float = 60.0
-    breite: float = 40.0
+    # Querfeld: gespielt wird über die Breite eines Normalfelds (~68 m),
+    # 3 Felder pro Großfeld mit ~1 m Abstand -> je ~34 m tief
+    laenge: float = 68.0
+    breite: float = 34.0
     tor_breite: float = 5.0
-    box_tiefe: float = 9.0      # Strafraum: Tiefe vor dem Tor
-    box_breite: float = 24.0    # Strafraum: Breite
-    kreis_radius: float = 5.0   # Mittelkreis
+    box_tiefe: float = 9.0      # Strafraum: Tiefe vor dem Tor (geschätzt)
+    box_breite: float = 24.0    # Strafraum: Breite (geschätzt)
+    kreis_radius: float = 5.0   # Mittelkreis (geschätzt)
 
     def landmarks(self):
         """Benannte Referenzpunkte (Name -> Modellkoordinate in Metern)."""
