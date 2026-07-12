@@ -87,3 +87,22 @@ Feld. Platzmaße aktuell geschätzt (60×40 m) — echte Maße noch nachtragen.
 
 Dieser Rechner hat keine NVIDIA-GPU — kurze Clips zum Entwickeln laufen lokal
 auf der CPU, ganze Spiele verarbeiten wir später auf Google Colab (kostenlose GPU).
+
+## Volles Video auf Google Colab
+
+[![In Colab öffnen](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/timg4/FootballAnalytics/blob/main/notebooks/full_video_colab.ipynb)
+
+Das Notebook [`notebooks/full_video_colab.ipynb`](notebooks/full_video_colab.ipynb)
+führt das teure YOLO-Tracking auf einer Colab-GPU aus und registriert danach die
+Kameraschwenks im Streaming-Verfahren. Das Video wird aus Google Drive auf die
+schnelle Laufzeit-SSD kopiert; Tracking-Video, CSV, Homographien und Kontrollbilder
+werden anschließend wieder in Drive gesichert.
+
+1. `Video Project.mp4` in Google Drive nach
+   `Meine Ablage/FootballAnalytics/input/` hochladen.
+2. Notebook in Colab öffnen und als Laufzeit eine GPU auswählen.
+3. Zellen von oben nach unten ausführen. `STRIDE = 1` ist die Qualitätsvariante;
+   `STRIDE = 2` spart Zeit, kann bei ByteTrack aber zusätzliche ID-Wechsel erzeugen.
+
+Die anschließende Meter-Auswertung wartet noch auf eine neue Platzkalibrierung,
+weil dieses Video von einem anderen Kamerastandort stammt.

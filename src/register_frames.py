@@ -1,14 +1,23 @@
-"""Phase 2a: Frame-Registrierung — Kameraschwenks kompensieren.
+"""Phase 2a: Frame-Registrierung — Kameraschwenks kompensieren (Streaming).
 
 Die Veo-Follow-Cam ist ein virtueller Schwenk/Zoom aus einem Panorama, d.h.
 zwischen zwei Frames liegt (näherungsweise) eine reine Rotation -> die Bilder
 sind durch eine Homographie verbunden. Wir matchen ORB-Features (v.a. am
-statischen Hintergrund: Zäune, Gebäude, Flutlichter) und verketten die
-Homographien über Keyframes, sodass jeder Frame auf ein Referenzbild
-abgebildet werden kann. Ergebnis: <video>_homographies.npz mit einer
-3x3-Matrix pro Frame (Frame -> Referenzframe).
+statischen Hintergrund: Zäune, Gebäude, Flutlichter) gegen einen Keyframe und
+verketten die Homographien, sodass jeder Frame auf das Referenzbild abgebildet
+werden kann. Frames werden gestreamt (konstanter RAM), daher auch für lange
+Videos geeignet.
 
-Validierung mit --check: einzelne Frames werden ins Referenz-Koordinatensystem
+Ablauf: ein Vorwärtsdurchlauf ab --start. Der Referenzframe (--ref, absolut)
+muss im Bereich liegen; Homographien vor dem Referenzframe werden über die
+Inverse der Kette berechnet.
+
+Ergebnis: <video>_homographies.npz mit
+  H      — (n, 3, 3) Homographien Frame -> Referenzframe
+  frames — (n,) absolute Frame-Indizes zu den Matrizen
+  ref    — absoluter Referenz-Frame-Index
+
+Validierung mit --check: Frames werden ins Referenz-Koordinatensystem
 verzerrt und halbtransparent über das Referenzbild gelegt — Linien und
 Hintergrund müssen deckungsgleich sein.
 """
@@ -20,98 +29,135 @@ import cv2
 import numpy as np
 import supervision as sv
 
-MIN_INLIERS = 60          # darunter: neuen Keyframe setzen und nochmal versuchen
-MIN_KEYFRAME_GAP = 1
+MIN_INLIERS = 60      # darunter: Keyframe nachziehen
+MIN_MATCHES = 20
 
 
-def orb_homography(orb, matcher, img_a, kp_b, des_b, img_b_shape):
-    """Homographie img_a -> img_b über ORB-Matches, gibt (H, inlier) zurück."""
-    kp_a, des_a = orb.detectAndCompute(img_a, None)
-    if des_a is None or des_b is None or len(kp_a) < 20:
-        return None, 0
-    matches = matcher.knnMatch(des_a, des_b, k=2)
+def orb_match(orb, matcher, gray, kp_kf, des_kf):
+    """Homographie aktueller Frame -> Keyframe, gibt (H, inlier, kp, des)."""
+    kp, des = orb.detectAndCompute(gray, None)
+    if des is None or des_kf is None or len(kp) < MIN_MATCHES:
+        return None, 0, kp, des
+    matches = matcher.knnMatch(des, des_kf, k=2)
     good = [m for m, n in (p for p in matches if len(p) == 2)
             if m.distance < 0.75 * n.distance]
-    if len(good) < 20:
-        return None, 0
-    src = np.float32([kp_a[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
-    dst = np.float32([kp_b[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
+    if len(good) < MIN_MATCHES:
+        return None, 0, kp, des
+    src = np.float32([kp[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
+    dst = np.float32([kp_kf[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
     H, mask = cv2.findHomography(src, dst, cv2.RANSAC, 3.0)
     if H is None:
-        return None, 0
-    return H, int(mask.sum())
+        return None, 0, kp, des
+    return H, int(mask.sum()), kp, des
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Frame-Registrierung gegen Referenzframe")
+    parser = argparse.ArgumentParser(description="Frame-Registrierung (Streaming)")
     parser.add_argument("video")
-    parser.add_argument("--ref", type=int, default=0, help="Referenz-Frame-Index")
+    parser.add_argument("--ref", type=int, default=None,
+                        help="Referenzframe, absolut (Standard: erster Frame des Bereichs)")
+    parser.add_argument("--start", type=int, default=0, help="erster Frame (absolut)")
     parser.add_argument("--end", type=int, default=None, help="letzter Frame (exklusiv)")
+    parser.add_argument("--stride", type=int, default=1,
+                        help="nur jeden N-ten Frame registrieren (muss zum Tracking passen)")
+    parser.add_argument("--output", default=None,
+                        help="Ausgabe-NPZ (Standard: data/output/<video>_homographies.npz)")
     parser.add_argument("--check", action="store_true",
                         help="Validierungsbilder (Warp-Überlagerungen) speichern")
     args = parser.parse_args()
 
+    if args.stride < 1:
+        parser.error("--stride muss mindestens 1 sein")
+
     video_path = Path(args.video)
     out_dir = Path(__file__).resolve().parent.parent / "data" / "output"
     out_dir.mkdir(parents=True, exist_ok=True)
-    npz_path = out_dir / f"{video_path.stem}_homographies.npz"
+    npz_path = (Path(args.output) if args.output else
+                out_dir / f"{video_path.stem}_homographies.npz")
+    npz_path.parent.mkdir(parents=True, exist_ok=True)
 
     video_info = sv.VideoInfo.from_video_path(str(video_path))
-    end = args.end or video_info.total_frames
+    end = min(args.end or video_info.total_frames, video_info.total_frames)
+    ref = args.ref if args.ref is not None else args.start
+    if not (args.start <= ref < end):
+        raise SystemExit(f"--ref {ref} liegt nicht im Bereich [{args.start}, {end})")
 
     orb = cv2.ORB_create(nfeatures=4000)
     matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
 
-    print(f"Lese {end} Frames, Referenz = Frame {args.ref} ...")
-    frames = list(sv.get_video_frames_generator(str(video_path), end=end))
-    gray = [cv2.cvtColor(f, cv2.COLOR_BGR2GRAY) for f in frames]
+    n_frames = (end - args.start + args.stride - 1) // args.stride
+    print(f"Registriere {n_frames} Frames (Stride {args.stride}), "
+          f"Referenz = Frame {ref} ...")
 
-    H_to_ref = [None] * len(frames)
-    H_to_ref[args.ref] = np.eye(3)
+    frame_indices = []
+    H_chain = []          # Homographien Frame -> erster Frame des Bereichs
+    H_to_first = np.eye(3)
+    kp_kf = des_kf = None
+    check_frames = {}
+    ref_H_to_first = None
+    prev_gray = None
 
-    # Vom Referenzframe aus in beide Richtungen arbeiten. Aktueller Keyframe
-    # ist anfangs die Referenz; reißt das Matching ab (Schwenk zu weit),
-    # wird der zuletzt registrierte Frame neuer Keyframe (Verkettung).
-    for direction in (1, -1):
-        kf_idx = args.ref
-        kp_kf, des_kf = orb.detectAndCompute(gray[kf_idx], None)
-        idx = args.ref + direction
-        while 0 <= idx < len(frames):
-            H, inliers = orb_homography(orb, matcher, gray[idx], kp_kf, des_kf,
-                                        gray[kf_idx].shape)
+    frames = sv.get_video_frames_generator(str(video_path), start=args.start,
+                                           end=end, stride=args.stride)
+    for k, frame in enumerate(frames):
+        idx = args.start + k * args.stride
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        if kp_kf is None:  # allererster Frame = erster Keyframe
+            kp_kf, des_kf = orb.detectAndCompute(gray, None)
+            H_kf_to_first = np.eye(3)
+        else:
+            H, inliers, kp, des = orb_match(orb, matcher, gray, kp_kf, des_kf)
             if H is None or inliers < MIN_INLIERS:
-                # Keyframe nachziehen und erneut versuchen
-                new_kf = idx - direction
-                if new_kf == kf_idx:
-                    print(f"Frame {idx}: Registrierung fehlgeschlagen "
-                          f"({inliers} Inlier) — übernehme Nachbar-Homographie")
-                    H_to_ref[idx] = H_to_ref[idx - direction]
-                    idx += direction
-                    continue
-                kf_idx = new_kf
-                kp_kf, des_kf = orb.detectAndCompute(gray[kf_idx], None)
-                continue
-            H_to_ref[idx] = H_to_ref[kf_idx] @ H
-            if idx % 25 == 0:
-                print(f"Frame {idx}: {inliers} Inlier (Keyframe {kf_idx})", end="\r")
-            idx += direction
+                # Keyframe auf den vorherigen Frame nachziehen und nochmal
+                if prev_gray is not None:
+                    kp_kf, des_kf = orb.detectAndCompute(prev_gray, None)
+                    H_kf_to_first = H_chain[-1] if H_chain else np.eye(3)
+                    H, inliers, kp, des = orb_match(orb, matcher, gray, kp_kf, des_kf)
+                if H is None:
+                    print(f"\nFrame {idx}: Registrierung fehlgeschlagen — "
+                          f"übernehme letzte Homographie")
+                    H = np.eye(3)
+            H_to_first = H_kf_to_first @ H
+            # Keyframe regelmäßig nachziehen, damit die Basis aktuell bleibt
+            if inliers and inliers < 3 * MIN_INLIERS:
+                kp_kf, des_kf = kp, des
+                H_kf_to_first = H_to_first
 
-    np.savez_compressed(npz_path, H=np.array(H_to_ref), ref=args.ref)
+        frame_indices.append(idx)
+        H_chain.append(H_to_first)
+        prev_gray = gray
+        if idx == ref:
+            ref_H_to_first = H_to_first.copy()
+        if (args.check and k % max(1, n_frames // 5) == 0) or idx == ref:
+            check_frames[idx] = frame.copy()
+        if k % 100 == 0:
+            print(f"Frame {idx} ({k + 1}/{n_frames})", end="\r")
+
+    if ref_H_to_first is None:
+        raise SystemExit(f"Referenzframe {ref} wurde nicht verarbeitet "
+                         f"(Stride-Raster prüfen)")
+
+    # Umbasieren: Frame -> Referenzframe
+    first_to_ref = np.linalg.inv(ref_H_to_first)
+    H_to_ref = np.array([first_to_ref @ H for H in H_chain])
+
+    np.savez_compressed(npz_path, H=H_to_ref,
+                        frames=np.array(frame_indices), ref=ref)
     print(f"\nHomographien gespeichert: {npz_path}")
 
-    if args.check:
-        h, w = frames[0].shape[:2]
-        # großzügige Leinwand um das Referenzbild herum
+    if args.check and ref in check_frames:
+        h, w = check_frames[ref].shape[:2]
         offset = np.array([[1, 0, w], [0, 1, h // 2], [0, 0, 1]], dtype=np.float64)
         canvas_size = (w * 3, h * 2)
-        base = cv2.warpPerspective(frames[args.ref], offset, canvas_size)
-        for check_idx in np.linspace(0, len(frames) - 1, 5).astype(int):
-            warped = cv2.warpPerspective(frames[check_idx],
-                                         offset @ H_to_ref[check_idx], canvas_size)
+        base = cv2.warpPerspective(check_frames[ref], offset, canvas_size)
+        idx_map = {idx: n for n, idx in enumerate(frame_indices)}
+        for idx, img in sorted(check_frames.items()):
+            warped = cv2.warpPerspective(img, offset @ H_to_ref[idx_map[idx]],
+                                         canvas_size)
             blend = cv2.addWeighted(base, 0.5, warped, 0.5, 0)
-            small = cv2.resize(blend, None, fx=0.5, fy=0.5)
-            path = out_dir / f"check_warp_f{check_idx}.jpg"
-            cv2.imwrite(str(path), small)
+            path = out_dir / f"check_warp_f{idx}.jpg"
+            cv2.imwrite(str(path), cv2.resize(blend, None, fx=0.5, fy=0.5))
             print(f"Validierung: {path}")
 
 

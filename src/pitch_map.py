@@ -30,6 +30,8 @@ def main():
     parser.add_argument("homographies_npz")
     parser.add_argument("calibration_json")
     parser.add_argument("--out-prefix", default=None)
+    parser.add_argument("--fps", type=float, default=29.97,
+                        help="Bildrate des Originalvideos (Standard: 29.97)")
     args = parser.parse_args()
 
     out_dir = Path(__file__).resolve().parent.parent / "data" / "output"
@@ -38,22 +40,35 @@ def main():
     cal = json.loads(Path(args.calibration_json).read_text(encoding="utf-8"))
     pitch = PitchModel(**cal["pitch"])
     H_px_to_pitch = np.linalg.inv(np.array(cal["H_pitch_to_px"]))
-    H_all = np.load(args.homographies_npz)["H"]
+    with np.load(args.homographies_npz) as homographies:
+        H_all = homographies["H"].copy()
+        # Neue Streaming-Dateien speichern absolute Video-Frameindizes separat.
+        # Alte Clip-Dateien ohne `frames` bleiben weiterhin kompatibel.
+        registered_frames = (homographies["frames"].copy()
+                             if "frames" in homographies else None)
+    H_by_frame = ({int(frame): H for frame, H in zip(registered_frames, H_all)}
+                  if registered_frames is not None else None)
 
-    fps = 29.97  # Veo-Clips; für exakte Werte aus dem Video lesen
+    fps = args.fps
 
     # Fußpunkte -> Meter
     per_track = defaultdict(list)
     n_total = n_auf_platz = 0
     rows_out = []
-    with open(args.tracks_csv, newline="") as f:
+    with open(args.tracks_csv, newline="", encoding="utf-8-sig") as f:
         for r in csv.DictReader(f):
             frame_idx = int(r["frame"])
-            if frame_idx >= len(H_all):
-                continue
+            if H_by_frame is not None:
+                H_frame = H_by_frame.get(frame_idx)
+                if H_frame is None:
+                    continue
+            else:
+                if frame_idx >= len(H_all):
+                    continue
+                H_frame = H_all[frame_idx]
             foot = np.array([[[(float(r["x1"]) + float(r["x2"])) / 2,
                                float(r["y2"])]]], dtype=np.float64)
-            xy = cv2.perspectiveTransform(foot, H_px_to_pitch @ H_all[frame_idx])
+            xy = cv2.perspectiveTransform(foot, H_px_to_pitch @ H_frame)
             x_m, y_m = xy.reshape(2)
             auf_platz = (-RAND_M <= x_m <= pitch.laenge + RAND_M
                          and -RAND_M <= y_m <= pitch.breite + RAND_M)
@@ -104,10 +119,20 @@ def main():
             kernel = np.ones(k) / k
             xs = np.convolve(xs, kernel, mode="valid")
             ys = np.convolve(ys, kernel, mode="valid")
+            frame_numbers = np.array([p[0] for p in pts])[k - 1:]
+        else:
+            frame_numbers = np.array([p[0] for p in pts])
         steps = np.hypot(np.diff(xs), np.diff(ys))
-        steps = steps[steps < 12 / fps]  # >12 m/s ist Tracking-Fehler, kein Sprint
+        dt = np.diff(frame_numbers) / fps
+        # Der zulässige Weg skaliert mit dem echten Frame-Abstand (auch bei Stride).
+        steps = steps[steps < 12 * dt]  # >12 m/s ist Tracking-Fehler, kein Sprint
         dists[tid] = steps.sum()
-    dauer = max(len(H_all) / fps, 1e-6)
+    if registered_frames is not None and len(registered_frames):
+        typische_luecke = np.median(np.diff(registered_frames)) if len(registered_frames) > 1 else 1
+        dauer = (registered_frames[-1] - registered_frames[0] + typische_luecke) / fps
+    else:
+        dauer = len(H_all) / fps
+    dauer = max(dauer, 1e-6)
     for tid, d in sorted(dists.items(), key=lambda kv: -kv[1])[:10]:
         print(f"  Track #{tid}: {d:5.1f} m in {dauer:.1f} s "
               f"(Schnitt {d / dauer * 3.6:.1f} km/h)")

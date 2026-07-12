@@ -113,7 +113,7 @@ def main():
 
     # Tracking-Daten laden: frame -> Liste (tracker_id, box)
     per_frame = defaultdict(list)
-    with open(args.tracks_csv, newline="") as f:
+    with open(args.tracks_csv, newline="", encoding="utf-8-sig") as f:
         for row in csv.DictReader(f):
             per_frame[int(row["frame"])].append(
                 (int(row["tracker_id"]),
