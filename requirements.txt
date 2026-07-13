@@ -1,3 +1,5 @@
 ultralytics
 supervision<0.30  # ByteTrack wird in 0.30 entfernt, Migration auf "trackers"-Paket steht noch aus
+openvino>=2026.2  # CPU-Inferenz für post-hoc Person-ReID
+lap>=0.5.12       # lineare Zuordnung für Ultralytics BoT-SORT
 gdown  # Download der Beispielvideos/Modelle von Google Drive

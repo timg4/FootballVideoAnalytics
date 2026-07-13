@@ -1,0 +1,243 @@
+{
+  "video": "C:\\Users\\timgr\\OneDrive\\Dokumente\\FootballAnalytics\\data\\videos\\Video Project.mp4",
+  "frame": 0,
+  "hinweis": "Ortho-referenziert: 55.75x27.25 m aus Wiener Orthofoto. Klicks + gebrückte Mittelfeldpunkte + virtueller Nahpunkt (nahe Seitenlinie x Mittellinie), RANSAC-gefiltert.",
+  "pitch": {
+    "laenge": 55.75,
+    "breite": 27.25,
+    "tor_breite": 5.0,
+    "box_tiefe": 6.0,
+    "box_breite": 12.0,
+    "kreis_radius": 4.5
+  },
+  "points": [
+    {
+      "name": "Ecke links-fern",
+      "clicked_view": "Frame 23150",
+      "clicked_px": [
+        871.0,
+        279.0
+      ],
+      "meter": [
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Ecke links-nah",
+      "clicked_view": "Frame 23150",
+      "clicked_px": [
+        253.0,
+        325.0
+      ],
+      "meter": [
+        0,
+        27.25
+      ]
+    },
+    {
+      "name": "Tor links: Pfosten fern",
+      "clicked_view": "Frame 23150",
+      "clicked_px": [
+        673.0,
+        290.0
+      ],
+      "meter": [
+        0,
+        11.125
+      ]
+    },
+    {
+      "name": "Tor links: Pfosten nah",
+      "clicked_view": "Frame 23150",
+      "clicked_px": [
+        559.0,
+        298.0
+      ],
+      "meter": [
+        0,
+        16.125
+      ]
+    },
+    {
+      "name": "Mittellinie x ferne Seitenlinie",
+      "clicked_view": "Frame 23150",
+      "clicked_px": [
+        2003.8001614000805,
+        431.9773667318571
+      ],
+      "meter": [
+        27.875,
+        0
+      ]
+    },
+    {
+      "name": "Mittellinie x nahe Seitenlinie (virtuell)",
+      "clicked_view": "Frame 23150",
+      "clicked_px": [
+        1816.0728217580431,
+        833.1859069640434
+      ],
+      "meter": [
+        27.875,
+        27.25
+      ]
+    },
+    {
+      "name": "Mittellinie x ferne Seitenlinie",
+      "clicked_view": "Frame 23320",
+      "clicked_px": [
+        305.0,
+        319.0
+      ],
+      "meter": [
+        27.875,
+        0
+      ]
+    },
+    {
+      "name": "Ecke links-fern",
+      "clicked_view": "Frame 23320",
+      "clicked_px": [
+        -1246.3188463799067,
+        411.4356994648133
+      ],
+      "meter": [
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Tor links: Pfosten nah",
+      "clicked_view": "Frame 23320",
+      "clicked_px": [
+        -23491.92789035766,
+        3554.2694428857594
+      ],
+      "meter": [
+        0,
+        16.125
+      ]
+    },
+    {
+      "name": "Ecke rechts-fern",
+      "clicked_view": "Frame 23320",
+      "clicked_px": [
+        948.2783132701535,
+        280.27092855309814
+      ],
+      "meter": [
+        55.75,
+        0
+      ]
+    },
+    {
+      "name": "Ecke rechts-nah",
+      "clicked_view": "Frame 23320",
+      "clicked_px": [
+        2181.846478468035,
+        463.53858568079187
+      ],
+      "meter": [
+        55.75,
+        27.25
+      ]
+    },
+    {
+      "name": "Tor rechts: Pfosten fern",
+      "clicked_view": "Frame 23320",
+      "clicked_px": [
+        1185.62167092069,
+        313.3824312811868
+      ],
+      "meter": [
+        55.75,
+        11.125
+      ]
+    },
+    {
+      "name": "Tor rechts: Pfosten nah",
+      "clicked_view": "Frame 23320",
+      "clicked_px": [
+        1364.200582530448,
+        339.3390874273008
+      ],
+      "meter": [
+        55.75,
+        16.125
+      ]
+    },
+    {
+      "name": "Ecke rechts-fern",
+      "clicked_view": "Frame 23620",
+      "clicked_px": [
+        577.0,
+        274.0
+      ],
+      "meter": [
+        55.75,
+        0
+      ]
+    },
+    {
+      "name": "Ecke rechts-nah",
+      "clicked_view": "Frame 23620",
+      "clicked_px": [
+        1252.0,
+        345.0
+      ],
+      "meter": [
+        55.75,
+        27.25
+      ]
+    },
+    {
+      "name": "Tor rechts: Pfosten fern",
+      "clicked_view": "Frame 23620",
+      "clicked_px": [
+        765.0,
+        292.0
+      ],
+      "meter": [
+        55.75,
+        11.125
+      ]
+    },
+    {
+      "name": "Tor rechts: Pfosten nah",
+      "clicked_view": "Frame 23620",
+      "clicked_px": [
+        882.0,
+        304.0
+      ],
+      "meter": [
+        55.75,
+        16.125
+      ]
+    },
+    {
+      "name": "Mittellinie x ferne Seitenlinie",
+      "clicked_view": "Frame 23620",
+      "clicked_px": [
+        -246.78185026017158,
+        370.17782335608973
+      ],
+      "meter": [
+        27.875,
+        0
+      ]
+    },
+    {
+      "name": "Mittellinie x nahe Seitenlinie (virtuell)",
+      "clicked_view": "Frame 23620",
+      "clicked_px": [
+        -171.37676625375215,
+        740.7628478719099
+      ],
+      "meter": [
+        27.875,
+        27.25
+      ]
+    }
+  ]
+}

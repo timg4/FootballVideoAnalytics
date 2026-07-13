@@ -9,8 +9,8 @@ Einzelspieler-Profile.
 | Phase | Ziel | Status |
 |-------|------|--------|
 | 1 | Spieler-Erkennung + Tracking auf einem Clip, annotiertes Video als Ergebnis | ✅ (`--imgsz 1280` nötig für ferne Spieler) |
-| 2 | Spielfeld-Kalibrierung (Homographie): Pixel → Meter, 2D-Spielfeldkarte | ✅ End-to-End (`register_frames.py` → `calibrate_pitch.py`/vorläufige Kalibrierung → `pitch_map.py`) |
-| 3 | Laufdaten & Heatmaps pro Track, Team-Zuordnung über Trikotfarben | 🚧 Team-Clustering v2 in `team_assign.py`, ~90% korrekt |
+| 2 | Spielfeld-Kalibrierung (Homographie): Pixel → Meter, 2D-Spielfeldkarte | ✅ Direkte, driftfreie Anker-Lokalisierung für Vollvideo validiert |
+| 3 | Laufdaten & Heatmaps pro Track, Team-Zuordnung über Trikotfarben | 🚧 Vollvideo ausgewertet; sichtbare Tracklet-Distanzen + gefilterte Teams |
 | 4 | Ballbesitz, Passnetzwerke, Schuss-Erkennung | geplant |
 | 5 | Spieler-Identifikation (Re-ID) für saubere Einzelspieler-Profile über ganze Spiele | geplant |
 
@@ -34,19 +34,22 @@ Tracking-Rohdaten (Spielerpositionen pro Frame). Alle weiteren Schritte lesen
 die CSV und brauchen die teure Erkennung nicht zu wiederholen:
 
 ```powershell
-# Team-Zuordnung + Platz-Filter (liest Original-Video + Tracking-CSV)
-.\.venv\Scripts\python.exe src\team_assign.py data\videos\spiel.mp4 data\output\spiel_tracked.csv
+# Team-Zuordnung nach dem geometrischen Platzfilter
+.\.venv\Scripts\python.exe src\team_assign.py data\videos\spiel.mp4 `
+    data\output\spiel_tracked.csv `
+    --positions-csv data\output\spiel_positionen.csv --no-video
 ```
 
-**Besonderheit unseres Spielorts:** Drei Spielfelder liegen hintereinander vor
-der Kamera, alle drei Spiele landen in den Detektionen. `team_assign.py` löst
-Platz-Filter und Team-Zuordnung deshalb gemeinsam:
+**Besonderheit unseres Spielorts:** Mehrere Felder und Markierungs-Sets liegen
+im Kamerabild. Der geometrische Filter aus `pitch_map.py` entscheidet zuerst,
+welche Detektionen auf unserem Feld stehen. `team_assign.py` erhält diese
+Positionen mit `--positions-csv` und clustert erst danach die Trikotfarben:
 
 1. Farbmerkmale pro Track: helligkeits-normalisiert (Rot-/Grün-Anteil +
    Sättigung, Median statt Mittelwert), gesammelt nur von Boxen ≥ 45px
 2. K-Means in 5 Farbgruppen, mehrere Starts
 3. Alle Gruppen nahe der maximalen Spielergröße sind Team-Kandidaten;
-   farblich ähnliche Kandidaten werden verschmolzen (ein Team zerfällt im
+   anhand normalisierter BGR-Farbanteile ähnliche Kandidaten werden verschmolzen (ein Team zerfällt im
    Dämmerlicht gern in helle + abgeschattete Trikots), bis 2 Teams übrig sind
 4. Größen-Plausibilität: Tracks deutlich kleiner als ihr Team-Median fliegen
    raus (ferne Spieler entsättigen zu Grau und ähneln sonst dem weißen Team)
@@ -85,18 +88,22 @@ Feld. Platzmaße aktuell geschätzt (60×40 m) — echte Maße noch nachtragen.
 
 ## Hardware-Hinweis
 
-Dieser Rechner hat keine NVIDIA-GPU — kurze Clips zum Entwickeln laufen lokal
-auf der CPU, ganze Spiele verarbeiten wir später auf Google Colab (kostenlose GPU).
+Dieser Rechner hat keine NVIDIA-GPU. YOLO-Erkennung und Tracking für ganze
+Spiele laufen deshalb auf Google Colab/T4. Die direkte Platzlokalisierung mit
+OpenCV ORB/BFMatcher ist dagegen CPU-lastig und lief für 25.150 Frames lokal
+in rund 52 Minuten; eine T4 bringt diesem Schritt kaum etwas.
 
 ## Volles Video auf Google Colab
 
 [![In Colab öffnen](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/timg4/FootballAnalytics/blob/main/notebooks/full_video_colab.ipynb)
 
 Das Notebook [`notebooks/full_video_colab.ipynb`](notebooks/full_video_colab.ipynb)
-führt das teure YOLO-Tracking auf einer Colab-GPU aus und registriert danach die
-Kameraschwenks im Streaming-Verfahren. Das Video wird aus Google Drive auf die
-schnelle Laufzeit-SSD kopiert; Tracking-Video, CSV, Homographien und Kontrollbilder
-werden anschließend wieder in Drive gesichert.
+führt das teure YOLO-Tracking auf einer Colab-GPU aus. Für bessere, länger
+stabile IDs nutzt der aktuelle Modus BoT-SORT mit Kamerabewegungskompensation,
+fünf Sekunden Track-Buffer und Appearance-ReID. Das Video wird aus Google Drive
+auf die schnelle Laufzeit-SSD kopiert; Tracking-Video und CSV werden danach
+wieder in Drive gesichert. Die alte globale Registrierung ist nur noch ein
+deaktivierter Diagnoseschritt.
 
 1. `Video Project.mp4` in Google Drive nach
    `Meine Ablage/FootballAnalytics/input/` hochladen.
@@ -104,5 +111,30 @@ werden anschließend wieder in Drive gesichert.
 3. Zellen von oben nach unten ausführen. `STRIDE = 1` ist die Qualitätsvariante;
    `STRIDE = 2` spart Zeit, kann bei ByteTrack aber zusätzliche ID-Wechsel erzeugen.
 
-Die anschließende Meter-Auswertung wartet noch auf eine neue Platzkalibrierung,
-weil dieses Video von einem anderen Kamerastandort stammt.
+Für `Video Project.mp4` sind Tracking und die anschließende Meter-Auswertung
+inzwischen abgeschlossen. Die lange globale Homographiekette und ein einzelnes
+Panorama sind für die Meter-Auswertung verworfen, weil sie über 14 Minuten
+driften. Verbindlich ist die direkte Lokalisierung jedes Frames gegen drei
+kalibrierte Ankeransichten. Die Feldmaße 55,75×27,25 m stammen aus dem
+Orthofoto, die Kalibrierung liegt in `video_project_ortho.json`.
+
+```powershell
+# Direkte Vollvideo-Lokalisierung (lokal etwa 52 Minuten)
+.\.venv\Scripts\python.exe src\localize_pitch.py `
+    "data\videos\Video Project.mp4" `
+    data\calibration\video_project_ortho.json `
+    --output data\output\video_project_pitch_localization.npz
+
+# Positionen, Platzfilter, Heatmap und sichtbare Tracklet-Distanzen
+.\.venv\Scripts\python.exe src\pitch_map.py `
+    data\output\video_project_tracked.csv `
+    data\output\video_project_pitch_localization.npz `
+    data\calibration\video_project_ortho.json --fps 30
+
+# Teams nur aus On-Pitch-Detektionen bestimmen
+.\.venv\Scripts\python.exe src\team_assign.py `
+    "data\videos\Video Project.mp4" `
+    data\output\video_project_tracked.csv `
+    --positions-csv data\output\video_project_positionen.csv `
+    --no-video --debug
+```

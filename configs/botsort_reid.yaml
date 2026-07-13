@@ -1,0 +1,16 @@
+# BoT-SORT für die bewegte Veo-Follow-Cam mit Appearance-ReID.
+# Basiert auf Ultralytics botsort.yaml; bewusst als Projektdatei versioniert.
+tracker_type: botsort
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.25
+track_buffer: 150       # 5 s bei 30 fps; kurze Kamera-Abwesenheiten überbrücken
+match_thresh: 0.8
+fuse_score: True
+
+gmc_method: sparseOptFlow
+
+proximity_thresh: 0.5
+appearance_thresh: 0.85
+with_reid: True
+model: auto

@@ -1,7 +1,7 @@
 """Phase 1: Spieler-Erkennung und Tracking auf einem Videoclip.
 
 Nimmt ein Video (z.B. Veo-Export), erkennt Personen mit YOLO, verfolgt sie
-mit ByteTrack und schreibt ein annotiertes Video mit Track-IDs nach data/output/.
+wahlweise mit ByteTrack oder BoT-SORT+ReID und schreibt Tracking-CSV/Video.
 """
 
 import argparse
@@ -31,6 +31,9 @@ def main():
                         help="Nur jeden N-ten Frame verarbeiten (2 = halbe Zeit, für Statistiken ok)")
     parser.add_argument("--device", default=None,
                         help="Rechengerät für YOLO, z.B. 0 (erste GPU) oder cpu (Standard: automatisch)")
+    parser.add_argument("--tracker", choices=["bytetrack", "botsort-reid"],
+                        default="bytetrack",
+                        help="Tracker: bisheriger ByteTrack oder BoT-SORT mit ReID")
     args = parser.parse_args()
 
     if args.stride < 1:
@@ -54,10 +57,13 @@ def main():
     # Annotiertes Video trotz Stride in Echtzeit-Geschwindigkeit halten
     video_info.fps = fps_orig / args.stride
     print(f"Video: {video_info.width}x{video_info.height} @ {fps_orig} fps, "
-          f"verarbeite {total} Frames (Stride {args.stride})")
+          f"verarbeite {total} Frames (Stride {args.stride}, Tracker {args.tracker})")
 
     model = YOLO(args.model)
-    tracker = sv.ByteTrack(frame_rate=fps_orig / args.stride)
+    tracker = (sv.ByteTrack(frame_rate=fps_orig / args.stride)
+               if args.tracker == "bytetrack" else None)
+    botsort_config = (Path(__file__).resolve().parent.parent /
+                      "configs" / "botsort_reid.yaml")
     ellipse_annotator = sv.EllipseAnnotator()
     label_annotator = sv.LabelAnnotator(text_position=sv.Position.BOTTOM_CENTER,
                                         text_scale=0.4)
@@ -78,9 +84,19 @@ def main():
                                 classes=[PERSON_CLASS_ID], verbose=False)
             if args.device is not None:
                 predict_args["device"] = args.device
-            result = model(frame, **predict_args)[0]
-            detections = sv.Detections.from_ultralytics(result)
-            detections = tracker.update_with_detections(detections)
+            if args.tracker == "botsort-reid":
+                result = model.track(frame, persist=True,
+                                     tracker=str(botsort_config),
+                                     **predict_args)[0]
+                detections = sv.Detections.from_ultralytics(result)
+                # In seltenen Initialisierungsframes kann der Tracker noch
+                # keine IDs liefern; solche Boxen dürfen nicht in die CSV.
+                if detections.tracker_id is None:
+                    detections = sv.Detections.empty()
+            else:
+                result = model(frame, **predict_args)[0]
+                detections = sv.Detections.from_ultralytics(result)
+                detections = tracker.update_with_detections(detections)
 
             # Absolute Frame-Nummer im Video, damit nachgelagerte Schritte
             # (Teams, Registrierung, Meter) bei --start nicht verrutschen

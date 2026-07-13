@@ -2,10 +2,9 @@
 
 Liest die Tracking-CSV aus detect_track.py, bestimmt pro Track die Trikotfarbe
 (Torso-Ausschnitt) und clustert alle Tracks in mehrere Farbgruppen.
-Da am Veo-Standort drei Spiele parallel laufen, wählen wir automatisch die
-zwei Farbgruppen, deren Spieler im Bild am größten sind — das ist das Spiel
-direkt vor der Kamera. Alle anderen (Nachbarplätze, Passanten) werden grau
-markiert und zählen später nicht in die Statistiken.
+Wenn eine Positions-CSV aus pitch_map.py übergeben wird, fließen nur
+Detektionen mit auf_platz=1 in die Farbanalyse ein. Der alte Größenfilter
+bleibt als zusätzliche Plausibilitätsprüfung und für Legacy-Aufrufe erhalten.
 
 Farb-Merkmale sind helligkeits-normalisiert (Farbanteile + Sättigung), damit
 Dämmerlicht die Teams nicht verwischt: Weiß/Grau hat niedrige Sättigung,
@@ -98,26 +97,50 @@ def main():
     parser = argparse.ArgumentParser(description="Team-Zuordnung über Trikotfarben")
     parser.add_argument("video", help="Original-Video (nicht das annotierte!)")
     parser.add_argument("tracks_csv", help="Tracking-CSV aus detect_track.py")
+    parser.add_argument("--positions-csv", default=None,
+                        help="Positions-CSV aus pitch_map.py; verwendet nur auf_platz=1")
     parser.add_argument("--output", default=None)
+    parser.add_argument("--assignments-output", default=None,
+                        help="Ausgabe-CSV der Tracklet-Teamzuordnung")
     parser.add_argument("--clusters", type=int, default=5,
                         help="Anzahl Farbgruppen (2 Teams + Nachbarspiele/Sonstige)")
     parser.add_argument("--debug", action="store_true",
                         help="Pro Farbgruppe eine Trikot-Kachelübersicht speichern")
     parser.add_argument("--zeige-ignorierte", action="store_true",
                         help="Aussortierte Personen (Nachbarspiele) grau mit anzeigen")
+    parser.add_argument("--no-video", action="store_true",
+                        help="Nur Teams bestimmen und CSV schreiben, kein Video rendern")
     args = parser.parse_args()
 
     video_path = Path(args.video)
     out_dir = Path(__file__).resolve().parent.parent / "data" / "output"
     output_path = Path(args.output) if args.output else out_dir / f"{video_path.stem}_teams.mp4"
+    prefix = Path(args.tracks_csv).stem.replace("_tracked", "")
+    assignments_path = (Path(args.assignments_output) if args.assignments_output
+                        else out_dir / f"{prefix}_team_assignments.csv")
+
+    allowed = None
+    if args.positions_csv:
+        allowed = set()
+        with open(args.positions_csv, newline="", encoding="utf-8-sig") as f:
+            for row in csv.DictReader(f):
+                if int(row["auf_platz"]):
+                    allowed.add((int(row["frame"]), int(row["tracker_id"])))
+        print(f"Platzfilter geladen: {len(allowed)} Detektionen mit auf_platz=1")
 
     # Tracking-Daten laden: frame -> Liste (tracker_id, box)
     per_frame = defaultdict(list)
     with open(args.tracks_csv, newline="", encoding="utf-8-sig") as f:
         for row in csv.DictReader(f):
-            per_frame[int(row["frame"])].append(
-                (int(row["tracker_id"]),
+            frame = int(row["frame"])
+            tid = int(row["tracker_id"])
+            if allowed is not None and (frame, tid) not in allowed:
+                continue
+            per_frame[frame].append(
+                (tid,
                  (float(row["x1"]), float(row["y1"]), float(row["x2"]), float(row["y2"]))))
+    if not per_frame:
+        raise SystemExit("Keine Tracking-Detektionen nach dem Platzfilter übrig.")
     min_frame, max_frame = min(per_frame), max(per_frame)
 
     video_info = sv.VideoInfo.from_video_path(str(video_path))
@@ -163,6 +186,18 @@ def main():
     cluster_height = np.array([
         np.median(median_heights[labels == j]) if (labels == j).any() else 0
         for j in range(args.clusters)])
+    # Für das Verschmelzen abgeschatteter Varianten derselben Trikotfarbe
+    # sind reine Farbanteile robuster als das komplette K-Means-Merkmal:
+    # dessen Sättigungsachse kann z.B. ein hellblaues Cluster fälschlich
+    # näher an Grün als an ein dunkleres Blau rücken.
+    track_chroma = np.array([
+        np.median(track_raw[t], axis=0) /
+        max(np.median(track_raw[t], axis=0).sum(), 1e-6)
+        for t in track_ids])
+    cluster_chroma = np.array([
+        np.median(track_chroma[labels == j], axis=0)
+        if (labels == j).any() else np.zeros(3)
+        for j in range(args.clusters)])
 
     tallest = cluster_height.max()
     candidates = [j for j in range(args.clusters)
@@ -174,7 +209,7 @@ def main():
         best = None
         for a in range(len(groups)):
             for b in range(a + 1, len(groups)):
-                dist = min(np.linalg.norm(centers[x] - centers[y])
+                dist = min(np.linalg.norm(cluster_chroma[x] - cluster_chroma[y])
                            for x in groups[a] for y in groups[b])
                 if best is None or dist < best[0]:
                     best = (dist, a, b)
@@ -215,6 +250,22 @@ def main():
 
     if args.debug:
         save_cluster_mosaics(track_crops, track_ids, labels, args.clusters, out_dir)
+
+    label_of = dict(zip(track_ids, labels))
+    with open(assignments_path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["tracker_id", "team", "farbgruppe", "farbproben",
+                    "median_boxhoehe_px"])
+        for tid in sorted(track_heights):
+            team = team_of[tid]
+            w.writerow([tid, team if team != OTHER else "",
+                        label_of.get(tid, ""), len(track_feats.get(tid, [])),
+                        f"{np.median(track_heights[tid]):.2f}"])
+    print(f"Team-Zuordnungen: {assignments_path}")
+
+    if args.no_video:
+        print("Videoausgabe mit --no-video übersprungen.")
+        return
 
     # Pass 2: Video annotieren. Kräftige Signalfarben statt der echten
     # Trikotfarben — im Dämmerlicht sind die sonst kaum unterscheidbar

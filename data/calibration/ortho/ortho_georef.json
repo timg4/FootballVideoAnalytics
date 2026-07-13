@@ -1,0 +1,25 @@
+{
+  "beschreibung": "Orthofoto der Sportanlage (basemap.at, Stadt Wien, Befliegung 2024) als Geo-Referenz für die Platzkalibrierung. Anlage nahe Donauturm/Alte Donau, Wien 22.",
+  "quelle": "https://mapsneu.wien.gv.at/basemap/bmaporthofoto30cm/normal/google3857/{z}/{y}/{x}.jpeg",
+  "ortho_platz_komplett.jpg": {
+    "zoom": 20,
+    "kachel_ursprung_xy": [572106, 363462],
+    "kacheln": [10, 8],
+    "pixel": [2560, 2048],
+    "meter_pro_pixel": 0.09940,
+    "hinweis": "Pixel -> lat/lon über Web-Mercator: siehe px_to_latlon-Formel"
+  },
+  "ortho_rotiert.jpg": {
+    "basis": "ortho_platz_komplett.jpg",
+    "rotation_grad": 57.81,
+    "rotationszentrum_px": [1280, 1024],
+    "meter_pro_pixel": 0.09940,
+    "gitter": "gelb alle 10 m (beschriftet), dünn alle 5 m",
+    "hinweis": "Hauptplatz (Grossfeld mit 3 Querfeldern) liegt darin achsparallel"
+  },
+  "befunde": {
+    "hauptplatz": "Grosses Kunstrasenfeld mit Längsfeld-Markierung (Mittelkreis, Strafräume) UND Quermarkierungen (3 Streifen mit eigenen Bögen). Kamera-Standort der Highlight-Clips vermutlich an der NW-Längsseite.",
+    "zweiter_platz": "Östlicher Kunstrasen (Richtung Laufbahn/Traglufthalle), ebenfalls mit Quermarkierungen. Vermutlich der Platz aus Video Project.mp4 (Donauturm-Blickrichtung passt zu Kamera an der SO-Seite).",
+    "traglufthalle": "zwischen den Plätzen, in Highlight-Panorama und Orthofoto identifizierbar"
+  }
+}
