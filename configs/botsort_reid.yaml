@@ -11,6 +11,9 @@ fuse_score: True
 gmc_method: sparseOptFlow
 
 proximity_thresh: 0.5
-appearance_thresh: 0.85
+# Achtung: appearance_thresh ist in Ultralytics eine DISTANZ-Schwelle
+# (halbierte Kosinus-Distanz, Standard 0.25) — NICHT Similarity. 0.85 würde
+# das Appearance-Gate praktisch abschalten und ID-Switches begünstigen.
+appearance_thresh: 0.3
 with_reid: True
 model: auto

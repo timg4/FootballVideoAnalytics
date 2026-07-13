@@ -93,11 +93,34 @@
   --team-assignments data\output\video_project_team_assignments.csv
 ```
 
+### Review 13.07. (Claude): Stand unabhängig verifiziert + 1 Bug gefixt
+
+- Unabhängige Gegenprüfung der Vollvideo-Ergebnisse: Lokalisierungs-Statistik
+  bestätigt; NEU geprüft: On-Pitch-Zählung über alle 25.150 Frames = Median
+  9-10 Spieler/Frame in den Spielminuten, nur 26 Frames >18 (Filter dicht);
+  visuelle QA an 5 Frames über die volle Länge inkl. dunkelster Schlussphase
+  sauber. Ansatz bestätigt, kein Umbau nötig.
+- **Bug in `configs/botsort_reid.yaml` gefixt:** `appearance_thresh` ist in
+  Ultralytics eine (halbierte Kosinus-)DISTANZ-Schwelle, Standard 0.25 — der
+  eingetragene Wert 0.85 (vermutlich als Similarity gemeint) hätte das
+  Appearance-Gate praktisch deaktiviert und ID-Switches begünstigt. Jetzt 0.3.
+  **Vor dem Colab-Vollauf unbedingt mit der gefixten Config arbeiten.**
+- **A/B-Test läuft lokal** (60 s aktive Spielzeit, Frames 7.200-9.000,
+  yolo11s@1280, Stride 1): BoT-SORT+ReID (`data/output/ab_botsort_tracked.csv`)
+  vs. ByteTrack-Baseline (gleiche Frames aus `video_project_tracked.csv`).
+  Vergleichsmetrik: Anzahl + Medianlänge der On-Pitch-Tracklets. Erst bei
+  klarer Verbesserung den Colab-Vollauf starten.
+- Erwartung realistisch halten: track_buffer 150 = 5 s — Spieler, die länger
+  aus dem Bild sind (Schwenks!), bekommen weiterhin neue IDs. Der Neulauf
+  reduziert Fragmente, ersetzt aber nicht Stitching + kleine manuelle
+  Roster-Zuordnung für echte Spielerkilometer.
+
 ### Nächste sinnvolle Schritte
 
-- Code committen/pushen und im aktualisierten Colab-Notebook den
-  BoT-SORT/ReID-Vollvideo-Trackinglauf starten. Danach nur die neue CSV/MP4
-  aus Drive holen; Pitch-Lokalisierung muss nicht neu gerechnet werden.
+- Nach dem A/B: Code committen/pushen und im aktualisierten Colab-Notebook den
+  BoT-SORT/ReID-Vollvideo-Trackinglauf starten (mit gefixter Config!). Danach
+  nur die neue CSV/MP4 aus Drive holen; Pitch-Lokalisierung muss nicht neu
+  gerechnet werden.
 - Neue CSV durch `pitch_map.py` und `team_assign.py` schicken und zuerst die
   Fragmentierung (Anzahl/Medianlänge der Tracklets) gegen ByteTrack vergleichen.
 - Erst dann post-hoc Re-ID erneut anwenden. Für echte Namen/Nummern bleibt
