@@ -62,6 +62,53 @@
    Track-Buffer. 60-Frame-Smoke-Test erfolgreich. Das Colab-Notebook schreibt
    getrennt `video_project_botsort_reid_tracked.*` und überspringt standardmäßig
    die nicht mehr benötigte globale Legacy-Registrierung.
+9. **BoT-SORT/ReID-Vollvideo ausgeführt und fair verglichen (mit der unten
+   dokumentierten gefixten Config `appearance_thresh: 0.3`):** 509.399
+   Detektionen, 5.322 Tracklets gegenüber ByteTracks 469.665/4.114. Nach
+   Platz-/Teamfilter bleiben 679 Team-Tracklets statt 648; Median-Spanne ca.
+   5,1–5,3 s statt 6,3–7,1 s. Einzelne Spuren sind länger (Maximum 150,5 s),
+   insgesamt ist die Fragmentierung aber höher. Post-hoc ReID: 37 sichere
+   Links statt 36. **Fazit: ByteTrack bleibt Basis für die aktuelle
+   Spielerauswertung.** Die Teamwerte bestätigen sich fast exakt: Blau 8,176
+   statt 8,179 km, Grün 7,732 statt 7,643 km.
+10. **Scrollbare manuelle Spielerzuordnung gebaut:**
+    `build_player_review.py` erzeugt
+    `data/output/video_project_spieler_review.html` plus 1.638 gute
+    Ganzkörper-Crops. Der Standardfilter >=20 m zeigt ca. 255 relevante
+    Tracklets. **Neuer sinnvoller Modus: nicht alle Karten mappen**, sondern
+    nur 2–3 sichere Referenzen pro realem Spieler. Eingaben bleiben im
+    Browser-LocalStorage und werden als
+    `video_project_manuelles_spieler_mapping.csv` exportiert.
+    `propagate_player_labels.py` bildet daraus feste Appearance-Prototypen und
+    übernimmt weitere Tracklets nur bei Similarity >=0,75, Margin >=0,06 und
+    ohne zeitlichen Identitätskonflikt. `player_stats.py` aggregiert das
+    automatische Mapping zu Kilometer/Dauer je Spieler.
+11. **Seed-Auswertung für Tims blaues Team abgeschlossen:** Grün ist der
+    Gegner und wird nur als Teamgesamtwert geführt; dessen `Random`-Labels
+    werden nicht propagiert. Die verbesserte Datei
+    `video_project_manuelles_spieler_mappin_new.csv` enthält 34 blaue Seeds
+    für 7 Spieler. Daraus wurden 171 Tracklets und 6,462/8,179 km = **79 %**
+    der sichtbaren Teamdistanz zugeordnet. Leave-one-out: 94,1 % Top-1,
+    ca. 93 % Präzision der akzeptierten Fälle. Tim, Patrick, Lars, Stef, Opa
+    und Bre waren in allen testbaren Top-1-Fällen korrekt; zwei Ach-Seeds
+    wurden trotz hoher Sicherheit mit Bre verwechselt. Deshalb bleiben
+    automatisch zugeordnete Abschnitte dieser beiden als `Ach/Bre unklar`
+    gruppiert, während manuell bestätigte Abschnitte getrennt bleiben.
+    Kanonische Ergebnisse:
+    `data/output/video_project_auto_spieler_mapping.csv` und
+    `data/output/video_project_spieler_statistiken.csv`.
+12. **Kompakte visuelle Qualitätsprüfung vorhanden:**
+    `build_assignment_audit.py` erzeugt
+    `data/output/video_project_spieler_audit.html`. Die Seite zeigt alle
+    manuellen Referenzen und nur 41 kritische Auto-Fälle (niedrigste
+    Similarity/Margin sowie größte Distanzbeiträge). Falsche Auto-Karten
+    anklicken -> rot; Export als `video_project_reid_fehler.csv`. Zusammen mit
+    Leave-one-out (94,1 % Top-1 / ca. 93 % akzeptierte Präzision), zeitlicher
+    Konfliktsperre und Ach/Bre-Gruppierung ist das die aktuelle QA-Methode.
+    **Tim hat am 14.07.2026 alle 41 kritischen Fälle visuell geprüft und als
+    richtig bestätigt.** Damit ist die Spielerzuordnung für die aktuelle
+    sichtbare Mindestdistanz-Auswertung validiert; offen bleibt nur die bewusst
+    zusammengefasste Aufteilung `Ach/Bre unklar`.
 
 ### Reproduktionsbefehle
 
@@ -117,14 +164,19 @@
 
 ### Nächste sinnvolle Schritte
 
-- Nach dem A/B: Code committen/pushen und im aktualisierten Colab-Notebook den
-  BoT-SORT/ReID-Vollvideo-Trackinglauf starten (mit gefixter Config!). Danach
-  nur die neue CSV/MP4 aus Drive holen; Pitch-Lokalisierung muss nicht neu
-  gerechnet werden.
-- Neue CSV durch `pitch_map.py` und `team_assign.py` schicken und zuerst die
-  Fragmentierung (Anzahl/Medianlänge der Tracklets) gegen ByteTrack vergleichen.
-- Erst dann post-hoc Re-ID erneut anwenden. Für echte Namen/Nummern bleibt
-  voraussichtlich eine kleine manuelle Mapping-Schicht mit Tims Roster nötig.
+- `data/output/video_project_spieler_review.html` neu laden. Pro realem Spieler
+  nur 2–3 **eindeutige** Karten mit exakt demselben Namen/Nummer markieren;
+  unklare Karten auslassen. Startfilter ist 50 m.
+- Referenz-CSV exportieren, nach `data/output/` legen und automatisch verteilen:
+  `python src/propagate_player_labels.py
+  data/output/video_project_manuelles_spieler_mapping.csv
+  data/output/video_project_positionen.csv
+  data/output/video_project_distanzen.csv
+  data/output/video_project_reid_embeddings.npz`
+- Danach Spielerwerte erzeugen:
+  `python src/player_stats.py data/output/video_project_auto_spieler_mapping.csv`
+- Abdeckung prüfen; nur die verbleibenden großen/unsicheren Tracklets gezielt
+  nachlabeln, erneut exportieren und propagieren. Kein Vollmapping von Hand.
 - Optional ein gefiltertes Team-Kontrollvideo rendern (denselben Team-Befehl
   ohne `--no-video`; kostet einen zweiten Video-Pass und viel Speicher).
 
