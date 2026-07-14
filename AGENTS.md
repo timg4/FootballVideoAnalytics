@@ -109,6 +109,46 @@
     richtig bestätigt.** Damit ist die Spielerzuordnung für die aktuelle
     sichtbare Mindestdistanz-Auswertung validiert; offen bleibt nur die bewusst
     zusammengefasste Aufteilung `Ach/Bre unklar`.
+13. **Spieler-Dashboard, Heatmaps und robuste Laufleistungswerte erzeugt:**
+    `player_performance.py` kombiniert die finalen Positionen mit dem
+    validierten Auto-Mapping und schreibt
+    `data/output/video_project_spieler_dashboard.html`,
+    `video_project_spieler_leistungsdaten.csv` sowie acht Einzel-Heatmaps unter
+    `data/output/video_project_spieler_heatmaps/`. Die Geschwindigkeit wird aus
+    geglätteten 0,5-s-Fenstern berechnet; Lücken >2 Frames trennen Segmente und
+    Werte >=35 km/h werden als Messsprünge verworfen. Als Spitzentempo wird das
+    robustere 99. Perzentil statt des fehleranfälligen Maximums ausgegeben.
+    High-Intensity = >=15 km/h für mindestens 0,5 s, Sprint = >=20 km/h für
+    mindestens 0,5 s. Ergebnisbeispiele: Tim 1,221 km / 26,6 km/h / 8 Sprints,
+    Patrick 1,205 km / 28,8 km/h / 5 Sprints, Lars 0,977 km / 27,4 km/h /
+    4 Sprints. Alle Heatmaps wurden visuell auf Inhalt und Platzgeometrie
+    geprüft. **Auch diese Angaben sind sichtbare Mindestwerte aus 79 % der
+    blauen Teamdistanz, keine vollständigen GPS-Werte.** Kurze Profile wie Bre
+    (nur ca. 2 min sichtbar) haben deutlich unsicherere Tempowerte; automatisch
+    erkannte Ach/Bre-Abschnitte bleiben gemeinsam ausgewiesen.
+14. **1080p-Grundlage für Ball-/Passanalyse validiert:**
+    `data/videos/1080hp_day1.mp4` ist ein echter 1920×1080-Export mit 30 fps,
+    25.169 Frames und ca. 2,14 GB. Das alte 720p-Video hat 25.150 Frames.
+    Stichproben über das gesamte Spiel zeigen eine feste Synchronisation:
+    **alter Frame `n` = 1080p-Frame `n+10`**, Korrelation jeweils >0,999.
+    Die 1080p-Datei hat zusätzlich 10 Frames am Anfang und 9 am Ende; Framing
+    und Skalierung sind identisch. Deshalb bleiben alle bisherigen Spieler-IDs,
+    Positionen und manuellen Zuordnungen nutzbar. Vergleichscrops unter
+    `data/output/1080p_spieler_vergleich.jpg` bestätigen sichtbar sauberere
+    Konturen und Trikotdetails, ohne das Offscreen-ReID-Problem zu lösen.
+    Neues `detect_ball.py` erkennt auf 1080p bewusst niedrigschwellige
+    COCO-Sports-Ball-Kandidaten, arbeitet GPU-tauglich in Batches und schreibt
+    gleichzeitig auf 1280×720 skalierte Mittelpunktkoordinaten. Ein lokaler
+    Test mit 24 verteilten Frames ergab 125 Rohkandidaten, nach Platzfilter nur
+    noch 23. In einem zusammenhängenden 31-Frame-Test um Frame 10.000 gab es in
+    20 Frames einen On-Pitch-Kandidaten. Echte Bälle werden erkannt, daneben
+    bleiben Schuhe, Lichter und statische Feldpunkte; die YOLO-Treffer dürfen
+    daher **noch nicht direkt als Ballspur oder Pass** interpretiert werden.
+    `notebooks/ball_detection_colab.ipynb` führt den Vollvideo-Kandidatenlauf
+    auf der T4 für Source-Frames 10..25.159 aus und setzt `--frame-offset -10`.
+    Nächster Schritt nach Download der CSV: Platzfilter, statische Fehlpunkte,
+    zeitliche Trajektorie und Lückeninterpolation; erst danach Ballbesitz und
+    Pässe ableiten.
 
 ### Reproduktionsbefehle
 
@@ -175,6 +215,17 @@
   data/output/video_project_reid_embeddings.npz`
 - Danach Spielerwerte erzeugen:
   `python src/player_stats.py data/output/video_project_auto_spieler_mapping.csv`
+- Dashboard, Spieler-Heatmaps und robuste Laufleistungswerte erzeugen:
+  `python src/player_performance.py data/output/video_project_positionen.csv
+  data/output/video_project_auto_spieler_mapping.csv
+  data/calibration/video_project_ortho.json --fps 30 --output-prefix
+  video_project`
+- 1080p-Ballkandidaten auf der T4 erzeugen: neues Notebook
+  `notebooks/ball_detection_colab.ipynb` verwenden. Entsprechender Direktbefehl:
+  `python src/detect_ball.py data/videos/1080hp_day1.mp4 --device 0
+  --imgsz 1920 --conf 0.03 --batch-size 4 --start 10 --end 25160
+  --frame-offset -10 --output
+  data/output/video_project_1080_ball_candidates.csv`
 - Abdeckung prüfen; nur die verbleibenden großen/unsicheren Tracklets gezielt
   nachlabeln, erneut exportieren und propagieren. Kein Vollmapping von Hand.
 - Optional ein gefiltertes Team-Kontrollvideo rendern (denselben Team-Befehl
