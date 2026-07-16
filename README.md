@@ -1,140 +1,155 @@
-# FootballAnalytics ⚽
+# FootballAnalytics
 
-Automatische Statistiken aus Veo-Aufnahmen unserer Hobby-Fußballspiele:
-Spieler-Tracking, Laufdaten, Heatmaps — und später Pässe, Schüsse und
-Einzelspieler-Profile.
+My amateur team records its games with a Veo camera. That comes to hours of
+footage nobody ever turns into numbers. This project does it automatically: it
+finds the players in the video, converts their image position into real meters on
+the pitch, and turns that into heatmaps, running distances, and a split into the
+two teams.
 
-## Roadmap
+The core pipeline runs from the video file all the way to the finished stats, and
+I have checked it against a full 14-minute game. Ball possession, passes, and
+stable per-player IDs are started but not finished yet (see
+[Experimental](#experimental)).
 
-| Phase | Ziel | Status |
-|-------|------|--------|
-| 1 | Spieler-Erkennung + Tracking auf einem Clip, annotiertes Video als Ergebnis | ✅ (`--imgsz 1280` nötig für ferne Spieler) |
-| 2 | Spielfeld-Kalibrierung (Homographie): Pixel → Meter, 2D-Spielfeldkarte | ✅ Direkte, driftfreie Anker-Lokalisierung für Vollvideo validiert |
-| 3 | Laufdaten & Heatmaps pro Track, Team-Zuordnung über Trikotfarben | 🚧 Vollvideo ausgewertet; sichtbare Tracklet-Distanzen + gefilterte Teams |
-| 4 | Ballbesitz, Passnetzwerke, Schuss-Erkennung | geplant |
-| 5 | Spieler-Identifikation (Re-ID) für saubere Einzelspieler-Profile über ganze Spiele | geplant |
+## Result
 
-## Setup
+Heatmaps of a full game, split by team. Each point is a player position in
+meters, projected onto a top-down model of the pitch.
+
+| Team green | Team blue |
+|------------|-----------|
+| ![Heatmap team green](assets/heatmap_team_green.png) | ![Heatmap team blue](assets/heatmap_team_blue.png) |
+
+Both teams clearly push toward the opposing goal, and possession spreads across
+the whole width. The visible running output comes to roughly 7.6 km (green) and
+8.2 km (blue) over 14 minutes. What "visible" means here, and why these are not
+yet true per-player kilometers, is explained under [Limitations](#limitations).
+
+## How it works
+
+Four steps. Each one writes its intermediate result as a CSV, so the expensive
+detection runs only once and everything after it finishes in seconds.
+
+1. **Detection and tracking** (`detect_track.py`). YOLOv11 finds the people in
+   each frame, ByteTrack (or BoT-SORT with re-id) follows them over time. Distant
+   players only show up at an analysis resolution of 1280 px; below that they go
+   missing.
+2. **Pitch localization** (`localize_pitch.py`). Each frame is matched directly
+   against three calibrated anchor views, which gives the pixel-to-meter mapping.
+   This was the hardest part of the project, more on that below.
+3. **Metric positions** (`pitch_map.py`). Projects the foot point of every track
+   onto the pitch, throws away everything outside the field dimensions (the
+   neighboring games), and produces the position CSV, the heatmap, and the running
+   distances.
+4. **Team assignment** (`team_assign.py`). Clusters the jersey colors of the
+   remaining players into two teams, using brightness-normalized color features so
+   the low evening light does not wash the colors out.
+
+## The hard part: calibration
+
+The Veo camera is a follow-cam that pans digitally through a fixed panorama.
+Chaining a single homography across 14 minutes drifts too much to get reliable
+meters out of it. On top of that, several sets of lines overlap on the artificial
+turf (our cross-pitch plus the markings of the full-size field), which makes
+reading the field geometry ambiguous.
+
+The way out came from outside the video. The City of Vienna publishes orthophotos
+as open data (basemap.at, 10 cm per pixel). I found the facility in there and
+measured the field to within ten centimeters: 55.75 by 27.25 m. Instead of
+guessing, that is now the ground truth for the calibration.
+
+![Orthophoto with meter grid](assets/orthophoto_measurement.jpg)
+
+With that I localize each frame on its own, without drift. On the full game,
+25,150 of 25,150 frames are localized, with no dropouts. As a check, here is the
+projected field plus foot points across the whole match (green = on the pitch,
+red = neighboring game):
+
+![Calibration check](assets/calibration_validation.jpg)
+
+The long version, with all the dead ends and the numbers, is in
+[docs/methodology.md](docs/methodology.md).
+
+## Installation
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-## Verwendung
+Tested with Python 3.13 on Windows. Tracking a whole game really wants a GPU (I
+use Google Colab, see [notebooks/](notebooks/)); the pitch localization runs fine
+on the CPU.
 
-Video (z.B. Veo-Export "Download full game" aus app.veo.co) nach `data/videos/` legen, dann:
-
-```powershell
-.\.venv\Scripts\python.exe src\detect_track.py data\videos\spiel.mp4 --seconds 10
-```
-
-Das annotierte Ergebnis landet in `data/output/`, zusammen mit einer CSV der
-Tracking-Rohdaten (Spielerpositionen pro Frame). Alle weiteren Schritte lesen
-die CSV und brauchen die teure Erkennung nicht zu wiederholen:
+## Usage
 
 ```powershell
-# Team-Zuordnung nach dem geometrischen Platzfilter
-.\.venv\Scripts\python.exe src\team_assign.py data\videos\spiel.mp4 `
-    data\output\spiel_tracked.csv `
-    --positions-csv data\output\spiel_positionen.csv --no-video
-```
+# 1. Detection and tracking (writes the tracking CSV + an annotated video)
+.\.venv\Scripts\python.exe src\detect_track.py "data\videos\game.mp4" --imgsz 1280
 
-**Besonderheit unseres Spielorts:** Mehrere Felder und Markierungs-Sets liegen
-im Kamerabild. Der geometrische Filter aus `pitch_map.py` entscheidet zuerst,
-welche Detektionen auf unserem Feld stehen. `team_assign.py` erhält diese
-Positionen mit `--positions-csv` und clustert erst danach die Trikotfarben:
-
-1. Farbmerkmale pro Track: helligkeits-normalisiert (Rot-/Grün-Anteil +
-   Sättigung, Median statt Mittelwert), gesammelt nur von Boxen ≥ 45px
-2. K-Means in 5 Farbgruppen, mehrere Starts
-3. Alle Gruppen nahe der maximalen Spielergröße sind Team-Kandidaten;
-   anhand normalisierter BGR-Farbanteile ähnliche Kandidaten werden verschmolzen (ein Team zerfällt im
-   Dämmerlicht gern in helle + abgeschattete Trikots), bis 2 Teams übrig sind
-4. Größen-Plausibilität: Tracks deutlich kleiner als ihr Team-Median fliegen
-   raus (ferne Spieler entsättigen zu Grau und ähneln sonst dem weißen Team)
-
-`--debug` speichert pro Farbgruppe eine Trikot-Kachelübersicht nach
-`data/output/` zur Kontrolle. Stand: ~90% korrekt; Restfehler sind einzelne
-entfernte Nachbarplatz-Spieler im Weiß-Team und Spieler mit uneindeutigen
-Kits. Der saubere Fix ist die Spielfeld-Kalibrierung (Phase 2).
-
-## Phase-2-Pipeline (Bild → Meter)
-
-```powershell
-# 1. Kameraschwenks kompensieren (einmal pro Clip)
-.\.venv\Scripts\python.exe src\register_frames.py data\videos\clip.mp4 --ref 120 --check
-
-# 2. Kalibrierung: einmal pro Platz (liegt in data\calibration\platz_vorlaeufig.json;
-#    Feinschliff per Klick-Tool: src\calibrate_pitch.py)
-
-# 3. Positionen in Meter + Heatmap + Laufdistanzen + Platz-Filter
-.\.venv\Scripts\python.exe src\pitch_map.py data\output\clip_tracked.csv `
-    data\output\clip_homographies.npz data\calibration\platz_vorlaeufig.json
-```
-
-**Erkenntnisse zum Platz:** Auf dem Kunstrasen liegen mehrere Markierungs-Sets
-übereinander (unser Längsfeld + Quermarkierungen mit eigenem Strafraum). Unsere
-Merkpunkte: Anstoßpunkt + oberer Mittelkreisbogen (der untere ist abgenutzt),
-ferne Seitenlinie = Grenze zu den Spielen dahinter, nahe Seitenlinie = die
-unterste durchgehende Linie. Die Quer-Strafraumlinien gehören NICHT zu unserem
-Feld. Platzmaße aktuell geschätzt (60×40 m) — echte Maße noch nachtragen.
-
-## Veo-Videos herunterladen
-
-1. Im [Veo Clubhouse](https://app.veo.co) einloggen
-2. Spiel öffnen → **Download** → **Download full game** (MP4, Follow-Cam-Ansicht)
-3. Datei nach `data/videos/` verschieben
-
-## Hardware-Hinweis
-
-Dieser Rechner hat keine NVIDIA-GPU. YOLO-Erkennung und Tracking für ganze
-Spiele laufen deshalb auf Google Colab/T4. Die direkte Platzlokalisierung mit
-OpenCV ORB/BFMatcher ist dagegen CPU-lastig und lief für 25.150 Frames lokal
-in rund 52 Minuten; eine T4 bringt diesem Schritt kaum etwas.
-
-## Volles Video auf Google Colab
-
-[![In Colab öffnen](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/timg4/FootballAnalytics/blob/main/notebooks/full_video_colab.ipynb)
-
-Das Notebook [`notebooks/full_video_colab.ipynb`](notebooks/full_video_colab.ipynb)
-führt das teure YOLO-Tracking auf einer Colab-GPU aus. Für bessere, länger
-stabile IDs nutzt der aktuelle Modus BoT-SORT mit Kamerabewegungskompensation,
-fünf Sekunden Track-Buffer und Appearance-ReID. Das Video wird aus Google Drive
-auf die schnelle Laufzeit-SSD kopiert; Tracking-Video und CSV werden danach
-wieder in Drive gesichert. Die alte globale Registrierung ist nur noch ein
-deaktivierter Diagnoseschritt.
-
-1. `Video Project.mp4` in Google Drive nach
-   `Meine Ablage/FootballAnalytics/input/` hochladen.
-2. Notebook in Colab öffnen und als Laufzeit eine GPU auswählen.
-3. Zellen von oben nach unten ausführen. `STRIDE = 1` ist die Qualitätsvariante;
-   `STRIDE = 2` spart Zeit, kann bei ByteTrack aber zusätzliche ID-Wechsel erzeugen.
-
-Für `Video Project.mp4` sind Tracking und die anschließende Meter-Auswertung
-inzwischen abgeschlossen. Die lange globale Homographiekette und ein einzelnes
-Panorama sind für die Meter-Auswertung verworfen, weil sie über 14 Minuten
-driften. Verbindlich ist die direkte Lokalisierung jedes Frames gegen drei
-kalibrierte Ankeransichten. Die Feldmaße 55,75×27,25 m stammen aus dem
-Orthofoto, die Kalibrierung liegt in `video_project_ortho.json`.
-
-```powershell
-# Direkte Vollvideo-Lokalisierung (lokal etwa 52 Minuten)
-.\.venv\Scripts\python.exe src\localize_pitch.py `
-    "data\videos\Video Project.mp4" `
+# 2. Localize each frame against the ortho calibration
+.\.venv\Scripts\python.exe src\localize_pitch.py "data\videos\game.mp4" `
     data\calibration\video_project_ortho.json `
-    --output data\output\video_project_pitch_localization.npz
+    --output data\output\game_localization.npz
 
-# Positionen, Platzfilter, Heatmap und sichtbare Tracklet-Distanzen
-.\.venv\Scripts\python.exe src\pitch_map.py `
-    data\output\video_project_tracked.csv `
-    data\output\video_project_pitch_localization.npz `
+# 3. Metric positions, pitch filter, heatmap, running distances
+.\.venv\Scripts\python.exe src\pitch_map.py data\output\game_tracked.csv `
+    data\output\game_localization.npz `
     data\calibration\video_project_ortho.json --fps 30
 
-# Teams nur aus On-Pitch-Detektionen bestimmen
-.\.venv\Scripts\python.exe src\team_assign.py `
-    "data\videos\Video Project.mp4" `
-    data\output\video_project_tracked.csv `
-    --positions-csv data\output\video_project_positionen.csv `
-    --no-video --debug
+# 4. Determine the teams from the on-pitch players
+.\.venv\Scripts\python.exe src\team_assign.py "data\videos\game.mp4" `
+    data\output\game_tracked.csv `
+    --positions-csv data\output\game_positions.csv --no-video
 ```
+
+The calibration is specific to a camera position. A new position needs a one-time
+calibration through `calibrate_pitch.py` (a click tool) plus the field dimensions
+measured from the orthophoto.
+
+## Project structure
+
+Core pipeline (`src/`):
+
+| File | Job |
+|------|-----|
+| `detect_track.py` | person detection (YOLOv11) + tracking |
+| `register_frames.py` | camera-pan compensation via ORB homographies |
+| `localize_pitch.py` | drift-free per-frame localization against the calibration anchors |
+| `calibrate_pitch.py` | interactive click tool for the calibration |
+| `build_panorama.py` | median panorama as a calibration aid |
+| `pitch_model.py` | parametric pitch model + drawing helpers |
+| `pitch_map.py` | image positions to meters, pitch filter, heatmap, distances |
+| `team_assign.py` | team assignment from jersey colors |
+
+Configuration and notebooks live in `configs/` and `notebooks/`. The video,
+model, and output files are deliberately not checked in (`.gitignore`).
+
+### Experimental
+
+Started, but not yet part of the checked pipeline: ball detection, pass inference,
+and re-identification for stable per-player IDs (`detect_ball.py`,
+`extract_reid.py`, `stitch_tracklets.py`, `player_stats.py`,
+`player_performance.py`). The honest status is in
+[docs/methodology.md](docs/methodology.md#open-threads).
+
+## Limitations
+
+- **Tracklet IDs are not player IDs.** When a player leaves the frame during a
+  pan and comes back, the tracker usually gives them a new ID. The running
+  distances are therefore visible minimums per tracklet, not the total kilometers
+  of an identified player. Solving that cleanly is the main open problem (re-id
+  plus stitching, mentioned above).
+- **The follow-cam only shows a section.** On average nine or ten players are in
+  frame instead of all fourteen, so the pitch filter counts fewer at times.
+- **Low light.** When there is little light the jerseys desaturate, and ambiguous
+  kits (white against gray) stay a weak spot of the team assignment.
+- **The calibration is per camera position.** The two datasets I have come from
+  two positions and each needs its own calibration.
+
+## Data
+
+- Footage: Veo camera, exported from the [Veo Clubhouse](https://app.veo.co).
+- Orthophoto for the measurement: [basemap.at](https://basemap.at) from the City
+  of Vienna (open government data, 10 cm resolution).
+- Detection models: [Ultralytics YOLOv11](https://docs.ultralytics.com).
