@@ -1,9 +1,13 @@
-"""Parametrisiertes Spielfeld-Modell für Kalibrierung, Overlays und 2D-Karten.
+"""Parametric pitch model for calibration, overlays, and top-down maps.
 
-Koordinatensystem: x läuft über die Platzlänge (0 = linkes Tor aus Kamerasicht),
-y über die Breite (0 = ferne Seitenlinie, B = nahe Seitenlinie an der Kamera).
-Alle Maße in Metern. Die Standardwerte sind eine Kleinfeld-Schätzung und
-werden korrigiert, sobald die echten Platzmaße bekannt sind.
+Coordinate system: x runs along the pitch length (0 = left goal from the camera's
+view), y across the width (0 = far touchline, B = near touchline at the camera).
+All dimensions in meters. The defaults are a small-pitch estimate and get
+corrected once the real field dimensions are known.
+
+The German attribute and landmark names are the schema used in the calibration
+JSON files (PitchModel(**cal["pitch"]) and the point labels), so they stay put as
+stable identifiers.
 """
 
 from dataclasses import dataclass, asdict
@@ -14,17 +18,17 @@ import numpy as np
 
 @dataclass
 class PitchModel:
-    # Querfeld: gespielt wird über die Breite eines Normalfelds (~68 m),
-    # 3 Felder pro Großfeld mit ~1 m Abstand -> je ~34 m tief
+    # cross-pitch: played across the width of a full-size field (~68 m),
+    # 3 pitches per full field with ~1 m gap, so ~34 m deep each
     laenge: float = 68.0
     breite: float = 34.0
     tor_breite: float = 5.0
-    box_tiefe: float = 9.0      # Strafraum: Tiefe vor dem Tor (geschätzt)
-    box_breite: float = 24.0    # Strafraum: Breite (geschätzt)
-    kreis_radius: float = 5.0   # Mittelkreis (geschätzt)
+    box_tiefe: float = 9.0      # penalty box: depth in front of the goal (estimated)
+    box_breite: float = 24.0    # penalty box: width (estimated)
+    kreis_radius: float = 5.0   # center circle radius (estimated)
 
     def landmarks(self):
-        """Benannte Referenzpunkte (Name -> Modellkoordinate in Metern)."""
+        """Named reference points (name -> model coordinate in meters)."""
         L, B = self.laenge, self.breite
         t2 = self.tor_breite / 2
         bb2 = self.box_breite / 2
@@ -52,16 +56,16 @@ class PitchModel:
         }
 
     def lines(self, n_circle=48):
-        """Alle Linien des Modells als Liste von Polylinien (Meter)."""
+        """All lines of the model as a list of polylines (meters)."""
         L, B = self.laenge, self.breite
         bb2, bt = self.box_breite / 2, self.box_tiefe
         out = [
-            [(0, 0), (L, 0), (L, B), (0, B), (0, 0)],          # Außenlinien
-            [(L / 2, 0), (L / 2, B)],                          # Mittellinie
+            [(0, 0), (L, 0), (L, B), (0, B), (0, 0)],          # outer lines
+            [(L / 2, 0), (L / 2, B)],                          # halfway line
             [(0, B / 2 - bb2), (bt, B / 2 - bb2),
-             (bt, B / 2 + bb2), (0, B / 2 + bb2)],             # Strafraum links
+             (bt, B / 2 + bb2), (0, B / 2 + bb2)],             # penalty box left
             [(L, B / 2 - bb2), (L - bt, B / 2 - bb2),
-             (L - bt, B / 2 + bb2), (L, B / 2 + bb2)],         # Strafraum rechts
+             (L - bt, B / 2 + bb2), (L, B / 2 + bb2)],         # penalty box right
         ]
         angles = np.linspace(0, 2 * np.pi, n_circle)
         out.append([(L / 2 + self.kreis_radius * np.cos(a),
@@ -69,7 +73,7 @@ class PitchModel:
         return out
 
     def draw_overlay(self, frame, h_pitch_to_px, color=(0, 255, 255), thickness=2):
-        """Projiziert die Modelllinien mit Homographie (Meter -> Pixel) ins Bild."""
+        """Project the model lines into the image via a homography (meter -> pixel)."""
         img = frame.copy()
         for line in self.lines():
             pts = np.array(line, dtype=np.float64).reshape(-1, 1, 2)
@@ -81,7 +85,7 @@ class PitchModel:
         return img
 
     def draw_topdown(self, scale=12, margin=30):
-        """2D-Draufsicht des Platzes als Bild (scale = Pixel pro Meter)."""
+        """Top-down view of the pitch as an image (scale = pixels per meter)."""
         w = int(self.laenge * scale) + 2 * margin
         h = int(self.breite * scale) + 2 * margin
         img = np.full((h, w, 3), (40, 90, 40), dtype=np.uint8)

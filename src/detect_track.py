@@ -1,7 +1,7 @@
-"""Phase 1: Spieler-Erkennung und Tracking auf einem Videoclip.
+"""Detect people in a video clip and track them across the frames.
 
-Nimmt ein Video (z.B. Veo-Export), erkennt Personen mit YOLO, verfolgt sie
-wahlweise mit ByteTrack oder BoT-SORT+ReID und schreibt Tracking-CSV/Video.
+Takes a video (e.g. a Veo export), detects people with YOLO, tracks them with
+either ByteTrack or BoT-SORT+ReID, and writes the tracking CSV and video.
 """
 
 import argparse
@@ -11,37 +11,37 @@ from pathlib import Path
 import supervision as sv
 from ultralytics import YOLO
 
-PERSON_CLASS_ID = 0  # COCO-Klasse "person"
+PERSON_CLASS_ID = 0  # COCO class "person"
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Spieler-Erkennung + Tracking (Phase 1)")
-    parser.add_argument("video", help="Pfad zum Eingabevideo")
+    parser = argparse.ArgumentParser(description="Player detection and tracking")
+    parser.add_argument("video", help="path to the input video")
     parser.add_argument("--start", type=float, default=0,
-                        help="Startzeitpunkt in Sekunden")
+                        help="start time in seconds")
     parser.add_argument("--seconds", type=float, default=None,
-                        help="Nur N Sekunden ab --start verarbeiten (Standard: bis zum Ende)")
+                        help="process only N seconds from --start (default: to the end)")
     parser.add_argument("--model", default="yolo11n.pt",
-                        help="YOLO-Modell: yolo11n.pt (schnell) bis yolo11m.pt (genauer)")
-    parser.add_argument("--conf", type=float, default=0.3, help="Mindest-Konfidenz")
+                        help="YOLO model: yolo11n.pt (fast) to yolo11m.pt (more accurate)")
+    parser.add_argument("--conf", type=float, default=0.3, help="minimum confidence")
     parser.add_argument("--imgsz", type=int, default=640,
-                        help="Analyse-Auflösung; höher (z.B. 1280) findet kleine/ferne Spieler")
-    parser.add_argument("--output", default=None, help="Ausgabepfad (Standard: data/output/)")
+                        help="analysis resolution; higher (e.g. 1280) finds small/distant players")
+    parser.add_argument("--output", default=None, help="output path (default: data/output/)")
     parser.add_argument("--stride", type=int, default=1,
-                        help="Nur jeden N-ten Frame verarbeiten (2 = halbe Zeit, für Statistiken ok)")
+                        help="process only every Nth frame (2 = half the time, fine for stats)")
     parser.add_argument("--device", default=None,
-                        help="Rechengerät für YOLO, z.B. 0 (erste GPU) oder cpu (Standard: automatisch)")
+                        help="compute device for YOLO, e.g. 0 (first GPU) or cpu (default: automatic)")
     parser.add_argument("--tracker", choices=["bytetrack", "botsort-reid"],
                         default="bytetrack",
-                        help="Tracker: bisheriger ByteTrack oder BoT-SORT mit ReID")
+                        help="tracker: the existing ByteTrack or BoT-SORT with ReID")
     args = parser.parse_args()
 
     if args.stride < 1:
-        parser.error("--stride muss mindestens 1 sein")
+        parser.error("--stride must be at least 1")
 
     video_path = Path(args.video)
     if not video_path.exists():
-        raise SystemExit(f"Video nicht gefunden: {video_path}")
+        raise SystemExit(f"video not found: {video_path}")
 
     out_dir = Path(__file__).resolve().parent.parent / "data" / "output"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -54,10 +54,10 @@ def main():
         else video_info.total_frames
     end_frame = min(end_frame, video_info.total_frames)
     total = (end_frame - start_frame + args.stride - 1) // args.stride
-    # Annotiertes Video trotz Stride in Echtzeit-Geschwindigkeit halten
+    # keep the annotated video at real-time speed despite the stride
     video_info.fps = fps_orig / args.stride
     print(f"Video: {video_info.width}x{video_info.height} @ {fps_orig} fps, "
-          f"verarbeite {total} Frames (Stride {args.stride}, Tracker {args.tracker})")
+          f"processing {total} frames (stride {args.stride}, tracker {args.tracker})")
 
     model = YOLO(args.model)
     tracker = (sv.ByteTrack(frame_rate=fps_orig / args.stride)
@@ -68,8 +68,8 @@ def main():
     label_annotator = sv.LabelAnnotator(text_position=sv.Position.BOTTOM_CENTER,
                                         text_scale=0.4)
 
-    # Tracking-Rohdaten als CSV, damit spätere Analyse-Schritte (Teams, Heatmaps,
-    # Statistiken) nicht die teure YOLO-Erkennung wiederholen müssen
+    # raw tracking data as CSV, so the later analysis steps (teams, heatmaps,
+    # stats) don't have to repeat the expensive YOLO detection
     csv_path = output_path.with_suffix(".csv")
 
     frames = sv.get_video_frames_generator(str(video_path), start=start_frame,
@@ -89,8 +89,8 @@ def main():
                                      tracker=str(botsort_config),
                                      **predict_args)[0]
                 detections = sv.Detections.from_ultralytics(result)
-                # In seltenen Initialisierungsframes kann der Tracker noch
-                # keine IDs liefern; solche Boxen dürfen nicht in die CSV.
+                # in rare initialization frames the tracker has no IDs yet;
+                # those boxes must not go into the CSV
                 if detections.tracker_id is None:
                     detections = sv.Detections.empty()
             else:
@@ -98,8 +98,8 @@ def main():
                 detections = sv.Detections.from_ultralytics(result)
                 detections = tracker.update_with_detections(detections)
 
-            # Absolute Frame-Nummer im Video, damit nachgelagerte Schritte
-            # (Teams, Registrierung, Meter) bei --start nicht verrutschen
+            # absolute frame number in the video, so the downstream steps
+            # (teams, registration, meters) don't shift when --start is used
             for (x1, y1, x2, y2), tid, conf in zip(
                     detections.xyxy, detections.tracker_id, detections.confidence):
                 writer.writerow([start_frame + i * args.stride, tid,
@@ -112,10 +112,10 @@ def main():
             sink.write_frame(annotated)
 
             if i % 25 == 0:
-                print(f"Frame {i}/{total} — {len(detections)} Spieler im Bild", end="\r")
+                print(f"Frame {i}/{total}, {len(detections)} players in frame", end="\r")
 
-    print(f"\nFertig: {output_path}")
-    print(f"Tracking-Daten: {csv_path}")
+    print(f"\nDone: {output_path}")
+    print(f"Tracking data: {csv_path}")
 
 
 if __name__ == "__main__":

@@ -1,17 +1,17 @@
-"""Phase 2b: Einmalige Spielfeld-Kalibrierung per Mausklick.
+"""Calibrate the pitch once by mouse clicks.
 
-Zeigt einen Referenzframe des Videos. Für jeden angesagten Spielfeldpunkt
-(Ecken, Torpfosten, Strafraumecken, Mittelpunkt ...):
-  - Linksklick  = Punkt im Bild markieren (vorher ruhig mit der Lupe zoomen,
-                  Zoom-Werkzeug danach wieder deaktivieren!)
-  - Mittelklick = Punkt überspringen (wenn nicht sichtbar/unsicher)
+Shows a reference frame of the video. For each requested field point (corners,
+goal posts, penalty box corners, center spot, ...):
+  - left click   = mark the point in the image (feel free to zoom with the lens
+                   first, then turn the zoom tool off again!)
+  - middle click = skip the point (if it is not visible/uncertain)
 
-Mindestens 4 Punkte, besser 6-8, möglichst über den ganzen Platz verteilt.
-Ergebnis: data/calibration/platz.json + Kontrollbild mit projizierten
-Spielfeldlinien in data/calibration/. Da die Veo-Kamera fest montiert ist,
-gilt die Kalibrierung für alle Aufnahmen dieses Platzes.
+At least 4 points, better 6 to 8, spread across the whole pitch if possible.
+Output: data/calibration/<name>.json plus a control image with the projected field
+lines in data/calibration/. Since the Veo camera is fixed, the calibration holds
+for all recordings from this position.
 
-Aufruf (Platzmaße in Metern anpassen, sobald bekannt):
+Call (adjust the field dimensions in meters once they are known):
   python src\\calibrate_pitch.py "data\\videos\\highlights\\03 000707_-_Goal.mp4" --frame 120
 """
 
@@ -27,26 +27,26 @@ from pitch_model import PitchModel
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Spielfeld-Kalibrierung per Klick")
-    parser.add_argument("video", help="Video oder Panorama-Bild")
+    parser = argparse.ArgumentParser(description="Pitch calibration by clicking")
+    parser.add_argument("video", help="video or panorama image")
     parser.add_argument("--frame", type=int, default=0,
-                        help="Referenzframe (muss zum --ref der Registrierung passen!)")
+                        help="reference frame (must match the --ref of the registration!)")
     parser.add_argument("--homographies", default=None,
-                        help="NPZ für Mehrbild-Kalibrierung")
+                        help="NPZ for multi-view calibration")
     parser.add_argument("--frames", default=None,
-                        help="Kommagetrennte Video-Frames zum Umschalten, z.B. 23150,23320,23620")
-    parser.add_argument("--laenge", type=float, default=60.0)
-    parser.add_argument("--breite", type=float, default=40.0)
-    parser.add_argument("--tor", type=float, default=5.0)
-    parser.add_argument("--box-tiefe", type=float, default=9.0)
-    parser.add_argument("--box-breite", type=float, default=24.0)
-    parser.add_argument("--kreis", type=float, default=5.0)
-    parser.add_argument("--name", default="platz", help="Name der Kalibrierung")
+                        help="comma-separated video frames to switch between, e.g. 23150,23320,23620")
+    parser.add_argument("--length", type=float, default=60.0)
+    parser.add_argument("--width", type=float, default=40.0)
+    parser.add_argument("--goal", type=float, default=5.0)
+    parser.add_argument("--box-depth", type=float, default=9.0)
+    parser.add_argument("--box-width", type=float, default=24.0)
+    parser.add_argument("--circle", type=float, default=5.0)
+    parser.add_argument("--name", default="pitch", help="name of the calibration")
     args = parser.parse_args()
 
-    pitch = PitchModel(laenge=args.laenge, breite=args.breite, tor_breite=args.tor,
-                       box_tiefe=args.box_tiefe, box_breite=args.box_breite,
-                       kreis_radius=args.kreis)
+    pitch = PitchModel(laenge=args.length, breite=args.width, tor_breite=args.goal,
+                       box_tiefe=args.box_depth, box_breite=args.box_width,
+                       kreis_radius=args.circle)
 
     input_path = Path(args.video)
     image_suffixes = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
@@ -58,7 +58,7 @@ def main():
 
     if args.homographies or args.frames:
         if not (args.homographies and args.frames):
-            parser.error("--homographies und --frames müssen gemeinsam angegeben werden")
+            parser.error("--homographies and --frames must be given together")
         requested = [int(x.strip()) for x in args.frames.split(",") if x.strip()]
         with np.load(args.homographies) as homographies:
             H_all = homographies["H"]
@@ -69,20 +69,20 @@ def main():
         cap = cv2.VideoCapture(str(input_path))
         for frame_idx in requested:
             if frame_idx not in H_by_frame:
-                raise SystemExit(f"Frame {frame_idx} fehlt in der Homographie-Datei")
+                raise SystemExit(f"frame {frame_idx} missing from the homography file")
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
             ok, image = cap.read()
             if not ok:
-                raise SystemExit(f"Frame {frame_idx} nicht aus Video lesbar")
+                raise SystemExit(f"frame {frame_idx} not readable from the video")
             view_frames.append(image)
             view_H_to_ref.append(H_by_frame[frame_idx])
             view_labels.append(f"Frame {frame_idx}")
         cap.release()
-        print(f"Mehrbildmodus: {len(view_frames)} Frames, A/D wechselt die Ansicht")
+        print(f"Multi-view mode: {len(view_frames)} frames, A/D switches the view")
     elif input_path.suffix.lower() in image_suffixes:
         frame = cv2.imread(str(input_path))
         if frame is None:
-            raise SystemExit(f"Bild nicht lesbar: {input_path}")
+            raise SystemExit(f"image not readable: {input_path}")
         H_image_to_ref = np.eye(3)
         transform_path = input_path.with_name(f"{input_path.stem}_transform.json")
         if transform_path.exists():
@@ -91,7 +91,7 @@ def main():
             H_image_to_ref = np.linalg.inv(H_ref_to_image)
             source_video = transform.get("video", source_video)
             reference_frame = int(transform.get("ref", reference_frame))
-            print(f"Panorama-Transformation geladen: {transform_path}")
+            print(f"panorama transform loaded: {transform_path}")
         view_frames = [frame]
         view_H_to_ref = [H_image_to_ref]
         view_labels = [input_path.name]
@@ -105,17 +105,17 @@ def main():
     cal_dir = Path(__file__).resolve().parent.parent / "data" / "calibration"
     cal_dir.mkdir(parents=True, exist_ok=True)
 
-    print("\n=== Spielfeld-Kalibrierung ===")
-    print("Linksklick = Punkt setzen | A/D = Bild wechseln")
-    print("Rechts-/Mittelklick oder S = überspringen")
-    print("Esc = Kalibrierung abbrechen\n")
+    print("\n=== pitch calibration ===")
+    print("left click = set point | A/D = switch image")
+    print("right/middle click or S = skip")
+    print("Esc = abort the calibration\n")
 
     points = []
     marked_frames = [image.copy() for image in view_frames]
     height, width = view_frames[0].shape[:2]
     display_scale = min(1.0, 1600 / width, 850 / height)
     display_size = (int(width * display_scale), int(height * display_scale))
-    window = "FootballAnalytics - Platzkalibrierung"
+    window = "FootballAnalytics - pitch calibration"
     cv2.namedWindow(window, cv2.WINDOW_AUTOSIZE)
     click = {"value": None}
     current_view = {"index": len(view_frames) // 2}
@@ -137,7 +137,7 @@ def main():
                                  interpolation=cv2.INTER_AREA)
             cv2.rectangle(display, (0, 0), (display.shape[1], 48), (0, 0, 0), -1)
             title = (f"{view_labels[idx]} ({idx + 1}/{len(view_frames)}) | "
-                     f"Klicke: {name} | A/D wechseln")
+                     f"Click: {name} | A/D switch")
             title = title.encode("ascii", "replace").decode("ascii")
             cv2.putText(display, title, (12, 30), cv2.FONT_HERSHEY_SIMPLEX,
                         0.72, (0, 255, 255), 2, cv2.LINE_AA)
@@ -151,10 +151,10 @@ def main():
                 current_view["index"] = (current_view["index"] + 1) % len(view_frames)
             elif key == 27:
                 cv2.destroyAllWindows()
-                raise SystemExit("Kalibrierung abgebrochen")
+                raise SystemExit("calibration aborted")
 
         if click["value"] == "skip":
-            print("übersprungen")
+            print("skipped")
             continue
         px = [float(click["value"][0]), float(click["value"][1])]
         clicked_view = int(click["value"][2])
@@ -173,19 +173,19 @@ def main():
 
     cv2.destroyAllWindows()
     if len(points) < 4:
-        raise SystemExit(f"Nur {len(points)} Punkte — mindestens 4 nötig. Abbruch.")
+        raise SystemExit(f"only {len(points)} points, at least 4 needed. Aborting.")
 
     src_m = np.array([p["meter"] for p in points], dtype=np.float64).reshape(-1, 1, 2)
     dst_px = np.array([p["px"] for p in points], dtype=np.float64).reshape(-1, 1, 2)
     H_pitch_to_px, _ = cv2.findHomography(src_m, dst_px, 0)
 
-    # Reprojektionsfehler je Punkt
+    # reprojection error per point
     proj = cv2.perspectiveTransform(src_m, H_pitch_to_px).reshape(-1, 2)
     errors = np.linalg.norm(proj - dst_px.reshape(-1, 2), axis=1)
-    print("\nReprojektionsfehler (Pixel):")
+    print("\nreprojection error (pixels):")
     for p, e in zip(points, errors):
         print(f"  {p['name']}: {e:.1f}")
-    print(f"  Mittel: {errors.mean():.1f} px")
+    print(f"  mean: {errors.mean():.1f} px")
 
     data = {
         "video": source_video,
@@ -197,7 +197,7 @@ def main():
     json_path = cal_dir / f"{args.name}.json"
     json_path.write_text(json.dumps(data, indent=2, ensure_ascii=False),
                          encoding="utf-8")
-    ref_png = cal_dir / f"{args.name}_referenzframe.png"
+    ref_png = cal_dir / f"{args.name}_reference_frame.png"
     cv2.imwrite(str(ref_png), view_frames[len(view_frames) // 2])
 
     overlay_paths = []
@@ -205,15 +205,15 @@ def main():
         H_pitch_to_view = np.linalg.inv(H_view_to_ref) @ H_pitch_to_px
         overlay = pitch.draw_overlay(image, H_pitch_to_view)
         safe_label = label.lower().replace(" ", "_")
-        overlay_path = cal_dir / f"{args.name}_kontrolle_{safe_label}.jpg"
+        overlay_path = cal_dir / f"{args.name}_check_{safe_label}.jpg"
         cv2.imwrite(str(overlay_path), overlay)
         overlay_paths.append(overlay_path)
-    print(f"\nGespeichert: {json_path}")
-    print(f"Referenzframe: {ref_png}")
-    print("Kontrollbilder (projizierte Linien):")
+    print(f"\nsaved: {json_path}")
+    print(f"reference frame: {ref_png}")
+    print("control images (projected lines):")
     for path in overlay_paths:
         print(f"  {path}")
-    print("-> Kontrollbild anschauen: Liegen die gelben Linien auf den weißen?")
+    print("-> check the control image: do the yellow lines sit on the white ones?")
 
 
 if __name__ == "__main__":
