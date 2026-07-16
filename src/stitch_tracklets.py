@@ -34,7 +34,7 @@ def main():
     parser.add_argument("--output-prefix", default=None)
     args = parser.parse_args()
 
-    default_prefix = Path(args.positions_csv).stem.replace("_positionen", "")
+    default_prefix = Path(args.positions_csv).stem.replace("_positions", "")
     out_dir = Path(__file__).resolve().parent.parent / "data" / "output"
     prefix = Path(args.output_prefix) if args.output_prefix else out_dir / default_prefix
 
@@ -48,7 +48,7 @@ def main():
     with open(args.positions_csv, newline="", encoding="utf-8-sig") as f:
         for row in csv.DictReader(f):
             tid = int(row["tracker_id"])
-            if int(row["auf_platz"]) and tid in team_of:
+            if int(row["on_pitch"]) and tid in team_of:
                 points[tid].append((int(row["frame"]),
                                     float(row["x_m"]), float(row["y_m"])))
 

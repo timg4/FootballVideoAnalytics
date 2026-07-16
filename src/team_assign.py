@@ -1,15 +1,15 @@
-"""Phase 3 (Vorgriff): Team-Zuordnung über Trikotfarben + Platz-Filter.
+"""Assign players to two teams by jersey color (with a pitch filter).
 
-Liest die Tracking-CSV aus detect_track.py, bestimmt pro Track die Trikotfarbe
-(Torso-Ausschnitt) und clustert alle Tracks in mehrere Farbgruppen.
-Wenn eine Positions-CSV aus pitch_map.py übergeben wird, fließen nur
-Detektionen mit auf_platz=1 in die Farbanalyse ein. Der alte Größenfilter
-bleibt als zusätzliche Plausibilitätsprüfung und für Legacy-Aufrufe erhalten.
+Reads the tracking CSV from detect_track.py, determines the jersey color per track
+(torso crop), and clusters all tracks into several color groups. When a position
+CSV from pitch_map.py is passed, only detections with on_pitch=1 go into the color
+analysis. The old size filter stays as an extra plausibility check and for legacy
+calls.
 
-Farb-Merkmale sind helligkeits-normalisiert (Farbanteile + Sättigung), damit
-Dämmerlicht die Teams nicht verwischt: Weiß/Grau hat niedrige Sättigung,
-Pink hohen Rot-Anteil, Grün hohen Grün-Anteil — unabhängig davon, wie dunkel
-der Spieler gerade im Bild ist.
+The color features are brightness-normalized (color shares + saturation), so low
+evening light does not blur the teams: white/gray has low saturation, pink a high
+red share, green a high green share, regardless of how dark the player currently
+looks in the image.
 """
 
 import argparse
@@ -21,13 +21,13 @@ import cv2
 import numpy as np
 import supervision as sv
 
-MIN_SAMPLE_HEIGHT_1080 = 45  # Mindest-Boxhöhe für Farbproben, bezogen auf 1080p
-MIN_SAMPLES = 3          # Tracks mit weniger Farbproben bleiben unzugeordnet
-OTHER = 2                # class_id für alles außerhalb unseres Spiels
+MIN_SAMPLE_HEIGHT_1080 = 45  # minimum box height for color samples, relative to 1080p
+MIN_SAMPLES = 3          # tracks with fewer color samples stay unassigned
+OTHER = 2                # class_id for everything outside our game
 
 
 def torso_crop(frame, box):
-    """Torso-Ausschnitt einer Bounding Box (unterhalb Kopf, ohne Arme/Beine)."""
+    """Torso crop of a bounding box (below the head, without arms/legs)."""
     x1, y1, x2, y2 = [int(v) for v in box]
     h, w = y2 - y1, x2 - x1
     ty1, ty2 = y1 + int(0.20 * h), y1 + int(0.50 * h)
@@ -37,11 +37,10 @@ def torso_crop(frame, box):
 
 
 def color_features(crop):
-    """Helligkeits-normalisierte Merkmale: (Rot-Anteil, Grün-Anteil, Sättigung).
+    """Brightness-normalized features: (red share, green share, saturation).
 
-    Median statt Mittelwert, damit Rasen-/Hintergrundpixel im Ausschnitt
-    das Trikot nicht verfälschen. Skalierung so, dass alle drei Achsen
-    im K-Means vergleichbares Gewicht haben.
+    Median instead of mean, so grass/background pixels in the crop do not skew the
+    jersey color. Scaled so all three axes carry comparable weight in K-means.
     """
     med = np.median(crop.reshape(-1, 3).astype(np.float64), axis=0)  # BGR
     b, g, r = med
@@ -51,7 +50,7 @@ def color_features(crop):
 
 
 def kmeans(points, k, restarts=10, iters=100, seed=0):
-    """K-Means mit mehreren Starts, bester Lauf (kleinste Streuung) gewinnt."""
+    """K-means with several restarts, the best run (smallest spread) wins."""
     rng = np.random.default_rng(seed)
     best = None
     for _ in range(restarts):
@@ -72,7 +71,7 @@ def kmeans(points, k, restarts=10, iters=100, seed=0):
 
 
 def save_cluster_mosaics(track_crops, track_ids, labels, k, out_dir):
-    """Pro Farbgruppe eine Kachelübersicht der Torso-Ausschnitte speichern."""
+    """Save a tile overview of the torso crops per color group."""
     tile_w, tile_h, cols = 32, 48, 12
     for j in range(k):
         tiles = []
@@ -88,28 +87,28 @@ def save_cluster_mosaics(track_crops, track_ids, labels, k, out_dir):
             r, c = divmod(n, cols)
             mosaic[r * tile_h:(r + 1) * tile_h,
                    c * tile_w:(c + 1) * tile_w] = cv2.resize(tile, (tile_w, tile_h))
-        path = out_dir / f"debug_farbgruppe_{j}.jpg"
+        path = out_dir / f"debug_colorgroup_{j}.jpg"
         cv2.imwrite(str(path), mosaic)
-        print(f"  Kachelübersicht: {path}")
+        print(f"  Tile overview: {path}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Team-Zuordnung über Trikotfarben")
-    parser.add_argument("video", help="Original-Video (nicht das annotierte!)")
-    parser.add_argument("tracks_csv", help="Tracking-CSV aus detect_track.py")
+    parser = argparse.ArgumentParser(description="Team assignment from jersey colors")
+    parser.add_argument("video", help="original video (not the annotated one!)")
+    parser.add_argument("tracks_csv", help="tracking CSV from detect_track.py")
     parser.add_argument("--positions-csv", default=None,
-                        help="Positions-CSV aus pitch_map.py; verwendet nur auf_platz=1")
+                        help="position CSV from pitch_map.py; uses only on_pitch=1")
     parser.add_argument("--output", default=None)
     parser.add_argument("--assignments-output", default=None,
-                        help="Ausgabe-CSV der Tracklet-Teamzuordnung")
+                        help="output CSV of the tracklet team assignment")
     parser.add_argument("--clusters", type=int, default=5,
-                        help="Anzahl Farbgruppen (2 Teams + Nachbarspiele/Sonstige)")
+                        help="number of color groups (2 teams + neighboring games/other)")
     parser.add_argument("--debug", action="store_true",
-                        help="Pro Farbgruppe eine Trikot-Kachelübersicht speichern")
-    parser.add_argument("--zeige-ignorierte", action="store_true",
-                        help="Aussortierte Personen (Nachbarspiele) grau mit anzeigen")
+                        help="save a jersey tile overview per color group")
+    parser.add_argument("--show-ignored", action="store_true",
+                        help="also show the discarded people (neighboring games) in gray")
     parser.add_argument("--no-video", action="store_true",
-                        help="Nur Teams bestimmen und CSV schreiben, kein Video rendern")
+                        help="only determine teams and write the CSV, render no video")
     args = parser.parse_args()
 
     video_path = Path(args.video)
@@ -124,11 +123,11 @@ def main():
         allowed = set()
         with open(args.positions_csv, newline="", encoding="utf-8-sig") as f:
             for row in csv.DictReader(f):
-                if int(row["auf_platz"]):
+                if int(row["on_pitch"]):
                     allowed.add((int(row["frame"]), int(row["tracker_id"])))
-        print(f"Platzfilter geladen: {len(allowed)} Detektionen mit auf_platz=1")
+        print(f"Pitch filter loaded: {len(allowed)} detections with on_pitch=1")
 
-    # Tracking-Daten laden: frame -> Liste (tracker_id, box)
+    # load tracking data: frame -> list of (tracker_id, box)
     per_frame = defaultdict(list)
     with open(args.tracks_csv, newline="", encoding="utf-8-sig") as f:
         for row in csv.DictReader(f):
@@ -140,14 +139,14 @@ def main():
                 (tid,
                  (float(row["x1"]), float(row["y1"]), float(row["x2"]), float(row["y2"]))))
     if not per_frame:
-        raise SystemExit("Keine Tracking-Detektionen nach dem Platzfilter übrig.")
+        raise SystemExit("No tracking detections left after the pitch filter.")
     min_frame, max_frame = min(per_frame), max(per_frame)
 
     video_info = sv.VideoInfo.from_video_path(str(video_path))
     min_sample_height = MIN_SAMPLE_HEIGHT_1080 * video_info.height / 1080
 
-    # Pass 1: Farbmerkmale (nur große Boxen) und Boxhöhen pro Track sammeln
-    print("Pass 1: Trikotfarben sammeln ...")
+    # pass 1: collect color features (only large boxes) and box heights per track
+    print("Pass 1: collecting jersey colors ...")
     track_feats = defaultdict(list)
     track_raw = defaultdict(list)
     track_heights = defaultdict(list)
@@ -171,25 +170,23 @@ def main():
 
     track_ids = sorted(t for t in track_feats if len(track_feats[t]) >= MIN_SAMPLES)
     unassigned = set(track_heights) - set(track_ids)
-    print(f"{len(track_ids)} Tracks mit genug Farbproben, "
-          f"{len(unassigned)} zu klein/kurz -> ignoriert")
+    print(f"{len(track_ids)} tracks with enough color samples, "
+          f"{len(unassigned)} too small/short -> ignored")
 
     median_feats = np.array([np.median(track_feats[t], axis=0) for t in track_ids])
     median_heights = np.array([np.median(track_heights[t]) for t in track_ids])
 
-    # In Farbgruppen clustern. Unser Spiel = die Gruppen mit den größten
-    # Spielern (nah an der Kamera). Ein Team kann dabei in mehrere Farbgruppen
-    # zerfallen (helle vs. abgeschattete Trikots), deshalb: alle ausreichend
-    # großen Gruppen als Kandidaten nehmen und die farblich nächsten
-    # verschmelzen, bis genau 2 Teams übrig sind.
+    # cluster into color groups. Our game = the groups with the largest players
+    # (close to the camera). A team can split into several color groups here
+    # (bright vs. shadowed jerseys), so: take all sufficiently large groups as
+    # candidates and merge the closest ones by color until exactly 2 teams remain.
     labels, centers = kmeans(median_feats, k=args.clusters)
     cluster_height = np.array([
         np.median(median_heights[labels == j]) if (labels == j).any() else 0
         for j in range(args.clusters)])
-    # Für das Verschmelzen abgeschatteter Varianten derselben Trikotfarbe
-    # sind reine Farbanteile robuster als das komplette K-Means-Merkmal:
-    # dessen Sättigungsachse kann z.B. ein hellblaues Cluster fälschlich
-    # näher an Grün als an ein dunkleres Blau rücken.
+    # for merging shadowed variants of the same jersey color, plain color shares
+    # are more robust than the full K-means feature: its saturation axis can, for
+    # example, push a light-blue cluster closer to green than to a darker blue.
     track_chroma = np.array([
         np.median(track_raw[t], axis=0) /
         max(np.median(track_raw[t], axis=0).sum(), 1e-6)
@@ -222,9 +219,9 @@ def main():
     for tid, lab in zip(track_ids, labels):
         team_of[tid] = 0 if lab in groups[0] else 1 if lab in groups[1] else OTHER
 
-    # Größen-Plausibilität: In der Ferne entsättigen alle Farben zu Grau und
-    # ähneln dann v.a. dem weißen Team. Wer deutlich kleiner ist als der
-    # Median seines Teams, steht nicht auf unserem Platz -> ignorieren.
+    # size plausibility: far away all colors desaturate to gray and then resemble
+    # the white team most. A track much smaller than the median of its team is not
+    # on our pitch, so drop it.
     height_of = dict(zip(track_ids, median_heights))
     for team in (0, 1):
         member_heights = [height_of[t] for t in track_ids if team_of[t] == team]
@@ -234,7 +231,7 @@ def main():
         for t in demoted:
             team_of[t] = OTHER
         if demoted:
-            print(f"Team {team}: {len(demoted)} zu kleine Tracks aussortiert "
+            print(f"Team {team}: dropped {len(demoted)} tracks that are too small "
                   f"(< {cutoff:.0f}px): {demoted}")
 
     for j in range(args.clusters):
@@ -243,10 +240,10 @@ def main():
                                    for t, m in zip(track_ids, members) if m]), axis=0) \
             if members.any() else np.zeros(3)
         status = ("TEAM 0" if j in groups[0] else
-                  "TEAM 1" if j in groups[1] else "ignoriert")
-        print(f"Farbgruppe {j}: Rot/Grün-Anteil+Sättigung={centers[j].round(0)}, "
-              f"typisch BGR={raw.astype(int)}, {members.sum():3d} Tracks, "
-              f"mittlere Größe {cluster_height[j]:.0f}px -> {status}")
+                  "TEAM 1" if j in groups[1] else "ignored")
+        print(f"Color group {j}: red/green share+saturation={centers[j].round(0)}, "
+              f"typical BGR={raw.astype(int)}, {members.sum():3d} tracks, "
+              f"mean size {cluster_height[j]:.0f}px -> {status}")
 
     if args.debug:
         save_cluster_mosaics(track_crops, track_ids, labels, args.clusters, out_dir)
@@ -254,26 +251,26 @@ def main():
     label_of = dict(zip(track_ids, labels))
     with open(assignments_path, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["tracker_id", "team", "farbgruppe", "farbproben",
-                    "median_boxhoehe_px"])
+        w.writerow(["tracker_id", "team", "color_group", "color_samples",
+                    "median_box_height_px"])
         for tid in sorted(track_heights):
             team = team_of[tid]
             w.writerow([tid, team if team != OTHER else "",
                         label_of.get(tid, ""), len(track_feats.get(tid, [])),
                         f"{np.median(track_heights[tid]):.2f}"])
-    print(f"Team-Zuordnungen: {assignments_path}")
+    print(f"Team assignments: {assignments_path}")
 
     if args.no_video:
-        print("Videoausgabe mit --no-video übersprungen.")
+        print("Video output skipped with --no-video.")
         return
 
-    # Pass 2: Video annotieren. Kräftige Signalfarben statt der echten
-    # Trikotfarben — im Dämmerlicht sind die sonst kaum unterscheidbar
-    print("Pass 2: Video annotieren ...")
+    # pass 2: annotate the video. Strong signal colors instead of the real jersey
+    # colors, which are barely distinguishable in low light.
+    print("Pass 2: annotating the video ...")
     palette = sv.ColorPalette(colors=[
-        sv.Color(r=230, g=40, b=40),    # Team 0: rot
-        sv.Color(r=40, g=120, b=255),   # Team 1: blau
-        sv.Color(r=110, g=110, b=110),  # Nachbarspiele/Sonstige: grau
+        sv.Color(r=230, g=40, b=40),    # team 0: red
+        sv.Color(r=40, g=120, b=255),   # team 1: blue
+        sv.Color(r=110, g=110, b=110),  # neighboring games/other: gray
     ])
     ellipse = sv.EllipseAnnotator(color=palette, color_lookup=sv.ColorLookup.CLASS)
     label_annotator = sv.LabelAnnotator(color=palette, color_lookup=sv.ColorLookup.CLASS,
@@ -284,7 +281,7 @@ def main():
     with sv.VideoSink(str(output_path), video_info) as sink:
         for i, frame in enumerate(frames, start=min_frame):
             entries = per_frame.get(i, [])
-            if not args.zeige_ignorierte:
+            if not args.show_ignored:
                 entries = [(tid, box) for tid, box in entries
                            if team_of[tid] != OTHER]
             if entries:
@@ -297,7 +294,7 @@ def main():
                 frame = label_annotator.annotate(frame, detections, labels=labels_txt)
             sink.write_frame(frame)
 
-    print(f"Fertig: {output_path}")
+    print(f"Done: {output_path}")
 
 
 if __name__ == "__main__":

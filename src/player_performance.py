@@ -141,7 +141,7 @@ def main():
     with open(args.positions_csv, newline="", encoding="utf-8-sig") as f:
         for row in csv.DictReader(f):
             tid = int(row["tracker_id"])
-            if int(row["auf_platz"]) and tid in mapping:
+            if int(row["on_pitch"]) and tid in mapping:
                 points_by_track[tid].append((int(row["frame"]),
                                              float(row["x_m"]), float(row["y_m"])))
 

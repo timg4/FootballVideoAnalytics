@@ -66,7 +66,7 @@ def main():
     with open(args.positions_csv, newline="", encoding="utf-8-sig") as f:
         for row in csv.DictReader(f):
             tid = int(row["tracker_id"])
-            if int(row["auf_platz"]) and tid in team_of:
+            if int(row["on_pitch"]) and tid in team_of:
                 allowed.add((int(row["frame"]), tid))
 
     candidates = defaultdict(list)

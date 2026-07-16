@@ -55,7 +55,7 @@ def main():
     spans = {}
     with open(args.positions_csv, newline="", encoding="utf-8-sig") as f:
         for row in csv.DictReader(f):
-            if not int(row["auf_platz"]):
+            if not int(row["on_pitch"]):
                 continue
             tid, frame = int(row["tracker_id"]), int(row["frame"])
             if tid not in embedding_of:

@@ -1,13 +1,13 @@
-"""Phase 2c: Spielerpositionen in Spielfeld-Metern + Heatmap + Laufdistanzen.
+"""Convert image positions into pitch meters and produce heatmap/running distances.
 
-Kombiniert die drei Bausteine:
-  1. Tracking-CSV (detect_track.py)        — wo ist wer im Bild
-  2. Homographien-NPZ (register_frames.py) — wie ist die Kamera gerade gedreht
-  3. Kalibrierung-JSON (calibrate_pitch.py)— Referenzbild -> Meter
+Combines the three building blocks:
+  1. tracking CSV (detect_track.py)        : who is where in the image
+  2. homographies NPZ (register_frames.py) : how the camera is currently rotated
+  3. calibration JSON (calibrate_pitch.py) : reference image -> meter
 
-Ergebnis: Positions-CSV (Meter), Heatmap-PNG, Laufdistanzen pro Track.
-Der Platz-Filter fällt gratis ab: Wer außerhalb der Platzmaße steht
-(Nachbarfelder), wird markiert und aus den Statistiken ausgeschlossen.
+Output: position CSV (meters), heatmap PNG, running distances per track. The pitch
+filter falls out for free: anything outside the field dimensions (the neighboring
+pitches) is flagged and excluded from the stats.
 """
 
 import argparse
@@ -21,19 +21,19 @@ import numpy as np
 
 from pitch_model import PitchModel
 
-RAND_M = 1.5  # Toleranz (m) außerhalb der Linien, bevor ein Punkt rausfliegt
+MARGIN_M = 1.5  # tolerance (m) outside the lines before a point is dropped
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Bildpositionen -> Spielfeld-Meter")
+    parser = argparse.ArgumentParser(description="Image positions -> pitch meters")
     parser.add_argument("tracks_csv")
     parser.add_argument("homographies_npz")
     parser.add_argument("calibration_json")
     parser.add_argument("--out-prefix", default=None)
     parser.add_argument("--team-assignments", default=None,
-                        help="Optionale CSV aus team_assign.py für Teamstatistiken")
+                        help="optional CSV from team_assign.py for team stats")
     parser.add_argument("--fps", type=float, default=29.97,
-                        help="Bildrate des Originalvideos (Standard: 29.97)")
+                        help="frame rate of the source video (default: 29.97)")
     args = parser.parse_args()
 
     out_dir = Path(__file__).resolve().parent.parent / "data" / "output"
@@ -47,16 +47,16 @@ def main():
 
     cal = json.loads(Path(args.calibration_json).read_text(encoding="utf-8"))
     pitch = PitchModel(**cal["pitch"])
-    # Nur für Legacy-Dateien nötig (globale Kalibrierung + Registrierungs-NPZ);
-    # bei direkter Lokalisierung (H_px_to_pitch im NPZ) entfällt der Schlüssel.
+    # only needed for legacy files (global calibration + registration NPZ);
+    # with direct localization (H_px_to_pitch in the NPZ) this key is absent.
     H_px_to_pitch = (np.linalg.inv(np.array(cal["H_pitch_to_px"]))
                      if "H_pitch_to_px" in cal else None)
     with np.load(args.homographies_npz) as homographies:
         direct_H = (homographies["H_px_to_pitch"].copy()
                     if "H_px_to_pitch" in homographies else None)
         H_all = (homographies["H"].copy() if "H" in homographies else None)
-        # Neue Streaming-Dateien speichern absolute Video-Frameindizes separat.
-        # Alte Clip-Dateien ohne `frames` bleiben weiterhin kompatibel.
+        # newer streaming files store the absolute video frame indices separately.
+        # older clip files without `frames` stay compatible.
         registered_frames = (homographies["frames"].copy()
                              if "frames" in homographies else None)
     matrices = direct_H if direct_H is not None else H_all
@@ -65,9 +65,9 @@ def main():
 
     fps = args.fps
 
-    # Fußpunkte -> Meter
+    # foot points -> meters
     per_track = defaultdict(list)
-    n_total = n_auf_platz = 0
+    n_total = n_on_pitch = 0
     rows_out = []
     with open(args.tracks_csv, newline="", encoding="utf-8-sig") as f:
         for r in csv.DictReader(f):
@@ -85,23 +85,23 @@ def main():
             transform = H_frame if direct_H is not None else H_px_to_pitch @ H_frame
             xy = cv2.perspectiveTransform(foot, transform)
             x_m, y_m = xy.reshape(2)
-            auf_platz = (-RAND_M <= x_m <= pitch.laenge + RAND_M
-                         and -RAND_M <= y_m <= pitch.breite + RAND_M)
+            on_pitch = (-MARGIN_M <= x_m <= pitch.laenge + MARGIN_M
+                        and -MARGIN_M <= y_m <= pitch.breite + MARGIN_M)
             n_total += 1
-            n_auf_platz += auf_platz
+            n_on_pitch += on_pitch
             tid = int(r["tracker_id"])
-            rows_out.append([frame_idx, tid, f"{x_m:.2f}", f"{y_m:.2f}", int(auf_platz)])
-            if auf_platz:
+            rows_out.append([frame_idx, tid, f"{x_m:.2f}", f"{y_m:.2f}", int(on_pitch)])
+            if on_pitch:
                 per_track[tid].append((frame_idx, x_m, y_m))
 
-    csv_path = out_dir / f"{prefix}_positionen.csv"
+    csv_path = out_dir / f"{prefix}_positions.csv"
     with open(csv_path, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["frame", "tracker_id", "x_m", "y_m", "auf_platz"])
+        w.writerow(["frame", "tracker_id", "x_m", "y_m", "on_pitch"])
         w.writerows(rows_out)
-    print(f"{n_auf_platz}/{n_total} Detektionen auf dem Platz -> {csv_path}")
+    print(f"{n_on_pitch}/{n_total} detections on the pitch -> {csv_path}")
 
-    # Heatmaps für alle erkannten Personen und optional getrennt pro Team.
+    # heatmaps for all detected people, and optionally split per team
     def write_heatmap(track_ids, path):
         scale, margin = 12, 30
         base = pitch.draw_topdown(scale=scale, margin=margin)
@@ -125,10 +125,10 @@ def main():
         tids = [tid for tid in per_track if team_of.get(tid) == team]
         write_heatmap(tids, out_dir / f"{prefix}_team_{team}_heatmap.png")
 
-    # Laufdistanzen (geglättet, nur plausible Sprünge). Eine Tracklet-ID
-    # ist keine dauerhafte Spieleridentität; deshalb werden Distanz und Dauer
-    # nur für tatsächlich beobachtete, zusammenhängende Abschnitte angegeben.
-    print("\nLaufdistanzen (Top 10, nur Frames auf dem Platz):")
+    # running distances (smoothed, only plausible jumps). A tracklet ID is not a
+    # persistent player identity, so distance and duration are reported only for
+    # the actually observed, contiguous stretches.
+    print("\nRunning distances (top 10, only on-pitch frames):")
     dists = {}
     for tid, pts in per_track.items():
         if len(pts) < 10:
@@ -136,7 +136,7 @@ def main():
         pts = sorted(pts)
         xs = np.array([p[1] for p in pts])
         ys = np.array([p[2] for p in pts])
-        k = 7  # gleitender Mittelwert gegen Detektionszittern
+        k = 7  # moving average against detection jitter
         if len(xs) > k:
             kernel = np.ones(k) / k
             xs = np.convolve(xs, kernel, mode="valid")
@@ -146,34 +146,33 @@ def main():
             frame_numbers = np.array([p[0] for p in pts])
         steps = np.hypot(np.diff(xs), np.diff(ys))
         dt = np.diff(frame_numbers) / fps
-        # Lücken bis eine Sekunde dürfen zum selben sichtbaren Abschnitt
-        # gehören. Längere Abwesenheiten werden weder als Weg noch als
-        # sichtbare Zeit gezählt. Der zulässige Weg skaliert mit dem echten
-        # Frame-Abstand (wichtig auch bei Stride).
+        # gaps up to one second may belong to the same visible stretch. Longer
+        # absences count neither as distance nor as visible time. The allowed
+        # step scales with the real frame spacing (matters with a stride too).
         observed = (dt > 0) & (dt <= 1.0)
-        plausible = observed & (steps < 12 * dt)  # >12 m/s = Tracking-Fehler
-        distanz = float(steps[plausible].sum())
-        sichtbare_dauer = float(dt[observed].sum())
-        dists[tid] = (distanz, sichtbare_dauer, len(pts))
+        plausible = observed & (steps < 12 * dt)  # >12 m/s = tracking error
+        distance = float(steps[plausible].sum())
+        visible_duration = float(dt[observed].sum())
+        dists[tid] = (distance, visible_duration, len(pts))
 
-    dist_path = out_dir / f"{prefix}_distanzen.csv"
+    dist_path = out_dir / f"{prefix}_distances.csv"
     with open(dist_path, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["tracker_id", "distanz_m", "sichtbare_dauer_s",
-                    "durchschnitt_kmh", "positionspunkte"])
-        for tid, (distanz, dauer, n_punkte) in sorted(
+        w.writerow(["tracker_id", "distance_m", "visible_seconds",
+                    "avg_kmh", "position_samples"])
+        for tid, (distance, duration, n_points) in sorted(
                 dists.items(), key=lambda kv: -kv[1][0]):
-            speed = distanz / dauer * 3.6 if dauer > 0 else 0.0
-            w.writerow([tid, f"{distanz:.2f}", f"{dauer:.2f}",
-                        f"{speed:.2f}", n_punkte])
-    print(f"Distanzreport: {dist_path}")
+            speed = distance / duration * 3.6 if duration > 0 else 0.0
+            w.writerow([tid, f"{distance:.2f}", f"{duration:.2f}",
+                        f"{speed:.2f}", n_points])
+    print(f"Distance report: {dist_path}")
 
     if team_of:
-        team_path = out_dir / f"{prefix}_team_statistiken.csv"
+        team_path = out_dir / f"{prefix}_team_stats.csv"
         with open(team_path, "w", newline="") as f:
             w = csv.writer(f)
-            w.writerow(["team", "sichtbare_distanz_km", "tracklets_mit_distanz",
-                        "on_pitch_detektionen", "summierte_sichtbare_trackletzeit_h"])
+            w.writerow(["team", "visible_distance_km", "tracklets_with_distance",
+                        "on_pitch_detections", "summed_visible_tracklet_hours"])
             for team in sorted(set(team_of.values())):
                 tids = [tid for tid in per_track if team_of.get(tid) == team]
                 values = [dists[tid] for tid in tids if tid in dists]
@@ -182,13 +181,13 @@ def main():
                 detections = sum(len(per_track[tid]) for tid in tids)
                 w.writerow([team, f"{distance / 1000:.3f}", len(values),
                             detections, f"{duration / 3600:.3f}"])
-        print(f"Teamstatistiken: {team_path}")
+        print(f"Team stats: {team_path}")
 
-    for tid, (distanz, dauer, _) in sorted(
+    for tid, (distance, duration, _) in sorted(
             dists.items(), key=lambda kv: -kv[1][0])[:10]:
-        speed = distanz / dauer * 3.6 if dauer > 0 else 0.0
-        print(f"  Track #{tid}: {distanz:5.1f} m in {dauer:.1f} s sichtbar "
-              f"(Schnitt {speed:.1f} km/h)")
+        speed = distance / duration * 3.6 if duration > 0 else 0.0
+        print(f"  Track #{tid}: {distance:5.1f} m in {duration:.1f} s visible "
+              f"(avg {speed:.1f} km/h)")
 
 
 if __name__ == "__main__":
