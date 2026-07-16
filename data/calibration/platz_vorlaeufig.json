@@ -1,7 +1,7 @@
 {
   "video": "C:\\Users\\timgr\\OneDrive\\Dokumente\\FootballAnalytics\\data\\videos\\highlights\\03 000707_-_Goal.mp4",
   "frame": 120,
-  "hinweis": "VORLÄUFIG: von Claude abgelesen, Platzmaße geschätzt (60x40)",
+  "hinweis": "Vorläufige Kalibrierung der Highlight-Kamera (31.05.); Feldmaße noch geschätzt, für Meterauswertung durch eine Orthofoto-Kalibrierung wie video_project_ortho.json ersetzen.",
   "pitch": {
     "laenge": 68.0,
     "breite": 34.0,
