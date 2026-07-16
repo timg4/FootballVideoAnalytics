@@ -1,5 +1,11 @@
-ultralytics
-supervision<0.30  # ByteTrack wird in 0.30 entfernt, Migration auf "trackers"-Paket steht noch aus
-openvino>=2026.2  # CPU-Inferenz für post-hoc Person-ReID
-lap>=0.5.12       # lineare Zuordnung für Ultralytics BoT-SORT
-gdown  # Download der Beispielvideos/Modelle von Google Drive
+# Kern-Pipeline
+ultralytics            # YOLOv11 Erkennung + Tracking (bringt torch, opencv, numpy mit)
+supervision<0.30       # ByteTrack + Annotatoren (ByteTrack ab 0.30 entfernt)
+lap>=0.5.12            # lineare Zuordnung für BoT-SORT
+gdown                  # Download der Modelle/Beispielvideos von Google Drive
+
+# Nur für die experimentellen Teile (Ball, Pässe, Re-ID)
+openvino>=2026.2       # CPU-Inferenz für Person-Re-ID
+torchvision>=0.27      # vortrainierte Bildfeatures
+pandas>=3.0            # Auswertung der Review-Tabellen
+scipy>=1.18            # Klassifikatoren
