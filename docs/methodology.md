@@ -73,24 +73,25 @@ wrong one and mix two geometries that do not belong together.
 ### The orthophoto trick
 
 The breakthrough came from outside the video. The City of Vienna provides
-orthophotos as open data (basemap.at, 10 cm per pixel). I found the facility in
-there, rotated the image so the field lies axis-aligned, and measured the lines
-directly against a meter grid: 55.75 by 27.25 m. Before that I had worked with a
-guessed 68 by 34 m, and those wrong dimensions were exactly why my click
-calibrations never came out consistent. With a fixed ground truth the guessing
-goes away.
+orthophotos as open data (basemap.at, about 10 cm per pixel). I found the facility
+there, rotated the image so the field lies axis-aligned, and measured the relevant
+strip at 55.75 by 27.25 m. Before that I had worked with a guessed 68 by 34 m,
+which was clearly the wrong scale. The orthophoto constrains the geometry, but the
+video overlay still has to decide which of several painted lines belongs to this
+pitch.
 
 ### Anchor localization instead of a global chain
 
-Instead of one running chain, I calibrate three separate anchor views (left,
-center, right) against the ortho dimensions. Each video frame is then matched by
-ORB feature matching directly against the best-fitting anchor, and mapped from
-there into meters. Because every frame hangs off a fixed anchor rather than its
-predecessor, there is no accumulated drift. A frame can match poorly on its own,
-but it does not drag the others with it.
+Instead of one running chain, I calibrate three separate anchor views against the
+ortho dimensions. Each video frame is then matched by ORB feature matching
+directly against the best-fitting anchor and mapped from there into meters.
+Because every frame hangs off a fixed anchor rather than its predecessor, there
+is no accumulated drift. A frame can match poorly on its own, but it does not drag
+the others with it.
 
 On the full game, 625 feature points match per frame at the median, the minimum is
-78, and all 25,150 frames get localized without dropouts.
+78, and all 25,150 frames get matched. These figures measure image registration,
+not the physical correctness of the clicked field boundary.
 
 ### The degenerate homography and the virtual near point
 
@@ -101,24 +102,29 @@ locally (reprojection errors of a few pixels) but folded the pitch completely wr
 in depth. In the control image you can see it as a field outline that collapses
 into a thin loop.
 
-Two things fixed it. First, I bridged points from the center of the field into each
-view through the local registration of the anchors, which sit only seconds apart,
-but only between neighboring views, because a bridge across the full pan would
-drift again. Second, I constructed a virtual near point: the intersection of the
-visible near touchline with the halfway line. That point sits close to the camera
-and breaks the collinearity. After that a RANSAC fit clears out the remaining
-outliers. One clicked "center spot" got rejected every time, probably because it
-was a point from one of the overlapping marking sets.
+My first fix was to bridge center-field points into the outer views and construct
+a virtual near point from an apparent touchline intersection. It produced small
+reprojection errors, but a later end-line frame showed that the virtual point came
+from a marking of the large field. The fit was mathematically consistent and
+physically wrong.
+
+The replacement uses the orthophoto and only the markings that really exist: the
+four outer lines. I click several positions along each line and switch between the
+left, middle, and right views where necessary. ORB registration puts these line
+samples into a common image coordinate system. Intersecting the fitted lines gives
+the four corners even if a corner lies outside every individual crop. The final
+full-video localization still matches every frame directly to a fixed anchor, so
+the short calibration bridge does not turn into a 14-minute drift chain.
 
 ### Checks
 
-Two checks convinced me the calibration was right before I started the long run.
-First the geometric one: the projected field outline sits on the real lines across
-the whole match, including the darkest closing phase (see
-`assets/calibration_validation.jpg`). Second the plausibility one: at the median
-nine or ten players per frame fall inside the field boundaries, and only 26 of
-25,150 frames show more than 18. If the filter were leaky, the neighboring games
-would be counted constantly.
+The first aggregate checks looked plausible, but they were not strict enough. In
+frame 23,620 the ball and two players in an active duel sit just beyond the
+projected touchline. A generous 0.5 m filter margin hid the error in the binary
+`on_pitch` count. This is now the acceptance test: before a full run, each anchor
+overlay is inspected directly, and the outer line must contain the duel in that
+frame without relying on the margin. The old validation image remains useful as
+an example of why aggregate counts alone are insufficient.
 
 ## Team assignment
 
@@ -146,17 +152,28 @@ The heatmap is a top-down model of the pitch onto which all on-pitch positions g
 stamped as Gaussian kernels. Nothing fancy, but it makes the distribution readable
 at a glance.
 
-For the running distances the honest computation mattered more than a big number.
+For the running distances the honest computation matters more than a big number.
 Per tracklet I smooth the meter positions with a moving average against the
 detection jitter, discard jumps above 12 m/s as tracking errors, and sum the rest.
 The report gives distance, visible duration, and average speed per tracklet.
 Because a tracklet only covers one visible stretch of a player, these are minimums,
-not total kilometers. The team sums (about 7.6 and 8.2 km) are therefore lower
-bounds on the real running output.
+not total kilometers. The final piecewise calibration uses one homography per
+half-pitch because the camera is mounted over the middle of a touchline. Six
+manual depth references fit at 1.7 px mean error; strict frame checks keep the
+active players and ball inside while excluding the neighboring games. In the
+14-minute run, 22,872 of 25,150 frames (90.9%) remain after the conservative
+anchor-transition filter.
 
 ## Open threads
 
 What I started and why it is not finished:
+
+**Pitch calibration.** The first global fit assigned markings from different
+pitch layouts to the wrong model points. The solved version uses the measured
+55.75 x 27.25 m strip, two half-pitch homographies, manual end corners and a
+shared far midpoint. The invisible point below the camera is inferred instead of
+clicked. Remaining uncertainty comes from Veo dewarping and the 9.1% discarded
+transition frames, not from an unfitted boundary.
 
 **Stable player IDs.** This is the prerequisite for real per-player stats and the
 hardest task. I extracted appearance vectors per tracklet (Intel

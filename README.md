@@ -6,24 +6,25 @@ finds the players in the video, converts their image position into real meters o
 the pitch, and turns that into heatmaps, running distances, and a split into the
 two teams.
 
-The core pipeline runs from the video file all the way to the finished stats, and
-I have checked it against a full 14-minute game. Ball possession, passes, and
-stable per-player IDs are started but not finished yet (see
+The core pipeline runs from the video file to metric player positions. I have run
+and frame-checked it on a complete 14-minute recording. The difficult part was a
+camera mounted exactly above the middle of one touchline; that view now uses two
+half-pitch homographies which meet below the camera. Ball possession, passes, and
+fully stable per-player IDs are still experimental (see
 [Experimental](#experimental)).
 
-## Result
+## Prototype output
 
-Heatmaps of a full game, split by team. Each point is a player position in
-meters, projected onto a top-down model of the pitch.
+These heatmaps show the visual format of an earlier development run. They are kept
+as a snapshot; the current validated results are generated locally in
+`data/output/` and deliberately not committed with the repository.
 
 | Team green | Team blue |
 |------------|-----------|
 | ![Heatmap team green](assets/heatmap_team_green.png) | ![Heatmap team blue](assets/heatmap_team_blue.png) |
 
-Both teams clearly push toward the opposing goal, and possession spreads across
-the whole width. The visible running output comes to roughly 7.6 km (green) and
-8.2 km (blue) over 14 minutes. What "visible" means here, and why these are not
-yet true per-player kilometers, is explained under [Limitations](#limitations).
+What "visible distance" means, and why tracklets are not automatically player
+identities, is explained under [Limitations](#limitations).
 
 ## How it works
 
@@ -54,16 +55,26 @@ turf (our cross-pitch plus the markings of the full-size field), which makes
 reading the field geometry ambiguous.
 
 The way out came from outside the video. The City of Vienna publishes orthophotos
-as open data (basemap.at, 10 cm per pixel). I found the facility in there and
-measured the field to within ten centimeters: 55.75 by 27.25 m. Instead of
-guessing, that is now the ground truth for the calibration.
+as open data (basemap.at, about 10 cm per pixel). I used it to identify the pitch
+layout and measure the relevant strip at 55.75 by 27.25 m instead of guessing
+standard dimensions. The exact line assignment still has to agree with the video
+overlay; the orthophoto alone does not tell me which overlapping paint mark
+belongs to the small-sided pitch.
 
 ![Orthophoto with meter grid](assets/orthophoto_measurement.jpg)
 
-With that I localize each frame on its own, without drift. On the full game,
-25,150 of 25,150 frames are localized, with no dropouts. As a check, here is the
-projected field plus foot points across the whole match (green = on the pitch,
-red = neighboring game):
+The camera stands over the midpoint of one real boundary. Its left and right
+branches are not one straight line in the Veo dewarp, so one global homography is
+physically wrong. I fit one homography per half. Six manual corner/far-midpoint
+references define the visible depth; the invisible ground point below the camera
+is inferred from the two boundary branches. The two fits reproduce the manual
+references with 1.7 px mean error.
+
+With that I localize each frame on its own, without accumulated drift. All 25,150
+frames are available; a conservative anchor-transition filter retains 90.9% as
+reliable for metrics. Strict checks on the three anchors and additional arbitrary
+frames separate the active game from the neighboring pitches and keep the tracked
+ball inside. The image below is retained as an earlier diagnostic:
 
 ![Calibration check](assets/calibration_validation.jpg)
 
@@ -89,13 +100,13 @@ on the CPU.
 
 # 2. Localize each frame against the ortho calibration
 .\.venv\Scripts\python.exe src\localize_pitch.py "data\videos\game.mp4" `
-    data\calibration\video_project_ortho.json `
+    data\calibration\video_project_piecewise_depth.json `
     --output data\output\game_localization.npz
 
 # 3. Metric positions, pitch filter, heatmap, running distances
 .\.venv\Scripts\python.exe src\pitch_map.py data\output\game_tracked.csv `
     data\output\game_localization.npz `
-    data\calibration\video_project_ortho.json --fps 30
+    data\calibration\video_project_piecewise_depth.json --fps 30
 
 # 4. Determine the teams from the on-pitch players
 .\.venv\Scripts\python.exe src\team_assign.py "data\videos\game.mp4" `
@@ -103,9 +114,37 @@ on the CPU.
     --positions-csv data\output\game_positions.csv --no-video
 ```
 
-The calibration is specific to a camera position. A new position needs a one-time
-calibration through `calibrate_pitch.py` (a click tool) plus the field dimensions
-measured from the orthophoto.
+The calibration is specific to a camera position. This pitch has no own halfway
+line or center circle, and no single camera crop contains both goals. A pure
+pitch-landmark fit would therefore be underdetermined. I mark several points along
+each of the four real outer lines, switching between neighbouring video views.
+Short ORB registrations put those points into a shared coordinate system. The
+line intersections provide the corners even when they lie outside a crop, so no
+halfway line or other landmark has to be invented. A second short click pass adds
+the depth references required by the two-half fit; the camera point itself is not
+visible and does not need to be clicked.
+
+```powershell
+# Select the four pitch corners in the orthophoto. The tool then highlights one
+# boundary at a time; click several points along that line and use A/D for views.
+.\.venv\Scripts\python.exe src\calibrate_from_ortho.py `
+    "data\videos\game.mp4" `
+    data\calibration\ortho\ortho_platz_komplett.jpg `
+    --frames 23150,23320,23620 --length 55.75 --width 27.25 `
+    --goal 5 --name game_v2
+
+# Acceptance check: exact boundary, without the production filter margin.
+.\.venv\Scripts\python.exe src\validate_pitch_frame.py `
+    "data\videos\game.mp4" data\calibration\game_v2.json --frame 23620 `
+    --tracks-csv data\output\game_tracked.csv
+
+# Full-video visual review: evenly sampled frames plus all calibration anchors.
+.\.venv\Scripts\python.exe src\build_pitch_qa.py `
+    "data\videos\game.mp4" data\calibration\video_project_piecewise_depth.json `
+    data\output\game_localization.npz data\output\game_tracked.csv `
+    --ball-track-csv data\output\game_ball_track.csv `
+    --output data\output\game_pitch_qa.html
+```
 
 ## Project structure
 
@@ -117,6 +156,12 @@ Core pipeline (`src/`):
 | `register_frames.py` | camera-pan compensation via ORB homographies |
 | `localize_pitch.py` | drift-free per-frame localization against the calibration anchors |
 | `calibrate_pitch.py` | interactive click tool for the calibration |
+| `calibrate_from_ortho.py` | video-to-orthophoto anchor correspondences for sparse pitch markings |
+| `collect_depth_references.py` | fixed ground references for both half-pitch fits |
+| `build_piecewise_calibration.py` | two homographies meeting below a touchline camera |
+| `rebase_piecewise_localization.py` | reuse a full localization with a new calibration |
+| `validate_pitch_frame.py` | strict one-frame boundary check before a full run |
+| `build_pitch_qa.py` | review sampled full-video overlays and export manual QA notes |
 | `build_panorama.py` | median panorama as a calibration aid |
 | `pitch_model.py` | parametric pitch model + drawing helpers |
 | `pitch_map.py` | image positions to meters, pitch filter, heatmap, distances |
@@ -142,6 +187,9 @@ and re-identification for stable per-player IDs (`detect_ball.py`,
   plus stitching, mentioned above).
 - **The follow-cam only shows a section.** On average nine or ten players are in
   frame instead of all fourteen, so the pitch filter counts fewer at times.
+- **Metrics cover visible time only.** The validated 14-minute run excludes 9.1%
+  of frames around ambiguous anchor transitions. It also cannot count players
+  while the follow-cam does not show them.
 - **Low light.** When there is little light the jerseys desaturate, and ambiguous
   kits (white against gray) stay a weak spot of the team assignment.
 - **The calibration is per camera position.** The two datasets I have come from

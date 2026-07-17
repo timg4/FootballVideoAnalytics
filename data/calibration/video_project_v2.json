@@ -1,0 +1,336 @@
+{
+  "video": "C:\\Users\\timgr\\OneDrive\\Dokumente\\FootballAnalytics\\data\\videos\\Video Project.mp4",
+  "frame": 23320,
+  "calibration_mode": "four_corners_with_registered_anchors",
+  "orthophoto": "C:\\Users\\timgr\\OneDrive\\Dokumente\\FootballAnalytics\\data\\calibration\\ortho\\ortho_platz_komplett.jpg",
+  "pitch": {
+    "laenge": 55.75,
+    "breite": 27.25,
+    "tor_breite": 5.0,
+    "box_tiefe": 0.0,
+    "box_breite": 0.0,
+    "kreis_radius": 0.0,
+    "mittellinie": false
+  },
+  "pitch_corners_ortho_px": [
+    [
+      1301.0823529411764,
+      804.7435294117647
+    ],
+    [
+      1491.4258823529412,
+      990.2682352941176
+    ],
+    [
+      1108.3294117647058,
+      1387.8211764705882
+    ],
+    [
+      910.7576470588235,
+      1199.8870588235295
+    ]
+  ],
+  "H_ortho_to_pitch": [
+    [
+      -0.06857207688238419,
+      0.070353156018459,
+      32.60167504883552
+    ],
+    [
+      0.06918157384083666,
+      0.06833790262693043,
+      -145.00541296443507
+    ],
+    [
+      -4.590178039854575e-05,
+      1.7126081984209797e-05,
+      1.0
+    ]
+  ],
+  "points": [
+    {
+      "name": "Pitch corner 1",
+      "clicked_view": "Frame 23150",
+      "clicked_px": [
+        953.7515733391534,
+        279.0228208298775
+      ],
+      "ortho_px": [
+        1301.0823529411764,
+        804.7435294117647
+      ],
+      "meter": [
+        3.1362710255732094e-06,
+        -3.289973066427351e-06
+      ],
+      "observed_in_frames": [
+        23320,
+        23620
+      ],
+      "transferred": true
+    },
+    {
+      "name": "Pitch corner 2",
+      "clicked_view": "Frame 23150",
+      "clicked_px": [
+        2121.7312860164807,
+        480.1003176049401
+      ],
+      "ortho_px": [
+        1491.4258823529412,
+        990.2682352941176
+      ],
+      "meter": [
+        4.612787838268933e-07,
+        27.249997458374335
+      ],
+      "observed_in_frames": [
+        23620
+      ],
+      "transferred": true
+    },
+    {
+      "name": "Pitch corner 3",
+      "clicked_view": "Frame 23150",
+      "clicked_px": [
+        260.26666666666665,
+        321.4222222222222
+      ],
+      "ortho_px": [
+        1108.3294117647058,
+        1387.8211764705882
+      ],
+      "meter": [
+        55.750004527620504,
+        27.249996550323225
+      ],
+      "observed_in_frames": [
+        23150
+      ],
+      "transferred": false
+    },
+    {
+      "name": "Pitch corner 4",
+      "clicked_view": "Frame 23150",
+      "clicked_px": [
+        874.6666666666666,
+        277.3333333333333
+      ],
+      "ortho_px": [
+        910.7576470588235,
+        1199.8870588235295
+      ],
+      "meter": [
+        55.749996901987785,
+        -5.763837401532838e-07
+      ],
+      "observed_in_frames": [
+        23150
+      ],
+      "transferred": false
+    },
+    {
+      "name": "Pitch corner 1",
+      "clicked_view": "Frame 23320",
+      "clicked_px": [
+        950.0444444444444,
+        280.1777777777778
+      ],
+      "ortho_px": [
+        1301.0823529411764,
+        804.7435294117647
+      ],
+      "meter": [
+        3.1362710255732094e-06,
+        -3.289973066427351e-06
+      ],
+      "observed_in_frames": [
+        23320,
+        23620
+      ],
+      "transferred": false
+    },
+    {
+      "name": "Pitch corner 2",
+      "clicked_view": "Frame 23320",
+      "clicked_px": [
+        2211.9203937123957,
+        463.4124749939846
+      ],
+      "ortho_px": [
+        1491.4258823529412,
+        990.2682352941176
+      ],
+      "meter": [
+        4.612787838268933e-07,
+        27.249997458374335
+      ],
+      "observed_in_frames": [
+        23620
+      ],
+      "transferred": true
+    },
+    {
+      "name": "Pitch corner 3",
+      "clicked_view": "Frame 23320",
+      "clicked_px": [
+        311.9267730381928,
+        341.7797737555842
+      ],
+      "ortho_px": [
+        1108.3294117647058,
+        1387.8211764705882
+      ],
+      "meter": [
+        55.750004527620504,
+        27.249996550323225
+      ],
+      "observed_in_frames": [
+        23150
+      ],
+      "transferred": true
+    },
+    {
+      "name": "Pitch corner 4",
+      "clicked_view": "Frame 23320",
+      "clicked_px": [
+        873.8028096643468,
+        281.2228665590105
+      ],
+      "ortho_px": [
+        910.7576470588235,
+        1199.8870588235295
+      ],
+      "meter": [
+        55.749996901987785,
+        -5.763837401532838e-07
+      ],
+      "observed_in_frames": [
+        23150
+      ],
+      "transferred": true
+    },
+    {
+      "name": "Pitch corner 1",
+      "clicked_view": "Frame 23620",
+      "clicked_px": [
+        580.2666666666668,
+        274.4888888888889
+      ],
+      "ortho_px": [
+        1301.0823529411764,
+        804.7435294117647
+      ],
+      "meter": [
+        3.1362710255732094e-06,
+        -3.289973066427351e-06
+      ],
+      "observed_in_frames": [
+        23320,
+        23620
+      ],
+      "transferred": false
+    },
+    {
+      "name": "Pitch corner 2",
+      "clicked_view": "Frame 23620",
+      "clicked_px": [
+        1254.4000000000003,
+        342.75555555555553
+      ],
+      "ortho_px": [
+        1491.4258823529412,
+        990.2682352941176
+      ],
+      "meter": [
+        4.612787838268933e-07,
+        27.249997458374335
+      ],
+      "observed_in_frames": [
+        23620
+      ],
+      "transferred": false
+    },
+    {
+      "name": "Pitch corner 3",
+      "clicked_view": "Frame 23620",
+      "clicked_px": [
+        -227.96668494515154,
+        401.4140428110435
+      ],
+      "ortho_px": [
+        1108.3294117647058,
+        1387.8211764705882
+      ],
+      "meter": [
+        55.750004527620504,
+        27.249996550323225
+      ],
+      "observed_in_frames": [
+        23150
+      ],
+      "transferred": true
+    },
+    {
+      "name": "Pitch corner 4",
+      "clicked_view": "Frame 23620",
+      "clicked_px": [
+        510.3208862971073,
+        278.7455693587152
+      ],
+      "ortho_px": [
+        910.7576470588235,
+        1199.8870588235295
+      ],
+      "meter": [
+        55.749996901987785,
+        -5.763837401532838e-07
+      ],
+      "observed_in_frames": [
+        23150
+      ],
+      "transferred": true
+    }
+  ],
+  "anchor_quality": [
+    {
+      "frame": 23150,
+      "points": 4,
+      "unique_corners": 4,
+      "mean_reprojection_error_px": 0.0003349544264970378,
+      "max_reprojection_error_px": 0.001179442470370828,
+      "model_hull_coverage": 0.9999999336856402,
+      "max_cross_view_corner_disagreement_px": 0.7234930872279003
+    },
+    {
+      "frame": 23320,
+      "points": 4,
+      "unique_corners": 4,
+      "mean_reprojection_error_px": 0.0003715440545368389,
+      "max_reprojection_error_px": 0.0013344167409888995,
+      "model_hull_coverage": 0.9999999336856402,
+      "max_cross_view_corner_disagreement_px": 1.416367764137978
+    },
+    {
+      "frame": 23620,
+      "points": 4,
+      "unique_corners": 4,
+      "mean_reprojection_error_px": 0.00014796998189907476,
+      "max_reprojection_error_px": 0.00037768285394196554,
+      "model_hull_coverage": 0.9999999336856402,
+      "max_cross_view_corner_disagreement_px": 1.258976190400253
+    }
+  ],
+  "view_registration_quality": [
+    {
+      "from_frame": 23150,
+      "to_frame": 23320,
+      "inliers": 90
+    },
+    {
+      "from_frame": 23320,
+      "to_frame": 23620,
+      "inliers": 678
+    }
+  ]
+}

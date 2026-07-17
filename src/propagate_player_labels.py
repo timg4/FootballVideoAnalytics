@@ -68,8 +68,14 @@ def main():
     stats = defaultdict(lambda: (0.0, 0.0))
     with open(args.distances_csv, newline="", encoding="utf-8-sig") as f:
         for row in csv.DictReader(f):
+            distance = row.get("distanz_m", row.get("distance_m"))
+            duration = row.get("sichtbare_dauer_s", row.get("visible_seconds"))
+            if distance is None or duration is None:
+                raise SystemExit(
+                    "Distance CSV needs distanz_m/sichtbare_dauer_s or "
+                    "distance_m/visible_seconds columns")
             stats[int(row["tracker_id"])] = (
-                float(row["distanz_m"]), float(row["sichtbare_dauer_s"]))
+                float(distance), float(duration))
 
     player_seeds = defaultdict(list)
     seed_ids = set()
