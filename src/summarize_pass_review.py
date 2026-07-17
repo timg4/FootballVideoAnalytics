@@ -3,6 +3,7 @@
 import argparse
 import csv
 import html
+import json
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -10,17 +11,24 @@ from pathlib import Path
 TEAM_NAMES = {"0": "Grün", "1": "Blau", "": "Unklar"}
 
 
-def normalize_player(value, team):
+def load_aliases(path):
+    if not path or not Path(path).exists():
+        return {}
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    aliases = raw.get("aliases", raw)
+    if not isinstance(aliases, dict):
+        raise SystemExit("Player aliases must be a JSON object")
+    return {
+        str(key).casefold().replace(" ", ""): str(value)
+        for key, value in aliases.items()
+    }
+
+
+def normalize_player(value, team, aliases):
     value = value.strip()
     if not value:
         return f"Unbekannt {TEAM_NAMES.get(team, 'Team')}"
     key = value.casefold().replace(" ", "")
-    aliases = {
-        "patrick": "Patrick abe",
-        "patrickabe": "Patrick abe",
-        "ach/bre": "Ach/Bre unklar",
-        "ach/breunklar": "Ach/Bre unklar",
-    }
     return aliases.get(key, value)
 
 
@@ -32,7 +40,10 @@ def main():
     parser = argparse.ArgumentParser(description="Validierte Passstatistik")
     parser.add_argument("review_csv")
     parser.add_argument("--output-prefix", default="video_project")
+    parser.add_argument("--player-aliases", default="data/player_names.json",
+                        help="optional ignored JSON with private player aliases")
     args = parser.parse_args()
+    aliases = load_aliases(args.player_aliases)
 
     review_path = Path(args.review_csv)
     out_dir = review_path.parent
@@ -55,8 +66,8 @@ def main():
         status = row["review_status"]
         from_team = row["review_von_team"].strip()
         to_team = row["review_zu_team"].strip()
-        passer = normalize_player(row["review_von_spieler"], from_team)
-        receiver = normalize_player(row["review_zu_spieler"], to_team)
+        passer = normalize_player(row["review_von_spieler"], from_team, aliases)
+        receiver = normalize_player(row["review_zu_spieler"], to_team, aliases)
 
         if status == "shot":
             team_stats[from_team]["schuesse"] += 1

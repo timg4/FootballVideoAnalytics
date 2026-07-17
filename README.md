@@ -13,11 +13,11 @@ half-pitch homographies which meet below the camera. Ball possession, passes, an
 fully stable per-player IDs are still experimental (see
 [Experimental](#experimental)).
 
-## Prototype output
+## Validated output
 
-These heatmaps show the visual format of an earlier development run. They are kept
-as a snapshot; the current validated results are generated locally in
-`data/output/` and deliberately not committed with the repository.
+These heatmaps come from the final piecewise calibration and the conservative
+anchor-transition filter. They show only visible on-pitch detections; they are
+not a claim of complete team movement while the follow-cam points elsewhere.
 
 | Team green | Team blue |
 |------------|-----------|
@@ -74,7 +74,8 @@ With that I localize each frame on its own, without accumulated drift. All 25,15
 frames are available; a conservative anchor-transition filter retains 90.9% as
 reliable for metrics. Strict checks on the three anchors and additional arbitrary
 frames separate the active game from the neighboring pitches and keep the tracked
-ball inside. The image below is retained as an earlier diagnostic:
+ball inside. The validated frame below shows the final boundary in the difficult
+right-hand view where the earlier calibration had put the duel and ball outside:
 
 ![Calibration check](assets/calibration_validation.jpg)
 
@@ -177,6 +178,14 @@ and re-identification for stable per-player IDs (`detect_ball.py`,
 `extract_reid.py`, `stitch_tracklets.py`, `player_stats.py`,
 `player_performance.py`). The honest status is in
 [docs/methodology.md](docs/methodology.md#open-threads).
+
+The 13 experimental ball/pass/contact scripts cover candidate filtering,
+contact review, motion and high-resolution audits, automatic pre-classification,
+and manual aggregation. Their review labels and some comments remain German
+because the annotation workflow was conducted in German; they are research
+prototypes rather than a polished public interface. Optional private player
+aliases are loaded from the gitignored `data/player_names.json`; the committed
+`data/player_names.example.json` documents the format.
 
 ## Limitations
 
