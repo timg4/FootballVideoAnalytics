@@ -97,7 +97,7 @@ def main():
     def map_point(point):
         if piecewise:
             mapped, _side = transform_piecewise(
-                [point], H_left, H_right, split_x, pitch.laenge)
+                [point], H_left, H_right, split_x, pitch.laenge, pitch.breite)
             return mapped.reshape(2)
         return transform_point(point, H_px_to_pitch)
 

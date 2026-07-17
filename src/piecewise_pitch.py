@@ -4,8 +4,15 @@ import cv2
 import numpy as np
 
 
-def transform_piecewise(points, H_left, H_right, split_x, pitch_length):
-    """Map image points and choose the half by the projected center seam."""
+def transform_piecewise(points, H_left, H_right, split_x, pitch_length,
+                        pitch_width=None, seam_guard_px=12.0):
+    """Map image points and choose the half by the projected center seam.
+
+    The two manual far-midpoint clicks differ by a few pixels and Veo dewarping
+    is not perfectly projective.  Close to the virtual seam, therefore, prefer
+    the half whose result lies inside its own pitch rectangle.  Away from that
+    narrow guard band the image-side decision remains authoritative.
+    """
     points = np.asarray(points, dtype=np.float64).reshape(-1, 1, 2)
     H_left = np.asarray(H_left, dtype=np.float64)
     H_right = np.asarray(H_right, dtype=np.float64)
@@ -27,7 +34,30 @@ def transform_piecewise(points, H_left, H_right, split_x, pitch_length):
 
     reference_side = side(left_reference.reshape(1, 2))[0]
     image_points = points.reshape(-1, 2)
-    use_left = side(image_points) * reference_side >= 0
+    point_side = side(image_points)
+    use_left = point_side * reference_side >= 0
+
+    if pitch_width is not None and seam_guard_px > 0:
+        width = float(pitch_width)
+        left_penalty = (
+            np.maximum(-left[:, 0], 0) +
+            np.maximum(left[:, 0] - split_x, 0) +
+            np.maximum(-left[:, 1], 0) +
+            np.maximum(left[:, 1] - width, 0)
+        )
+        right_penalty = (
+            np.maximum(split_x - right[:, 0], 0) +
+            np.maximum(right[:, 0] - pitch_length, 0) +
+            np.maximum(-right[:, 1], 0) +
+            np.maximum(right[:, 1] - width, 0)
+        )
+        seam_distance = np.abs(point_side) / max(
+            float(np.linalg.norm(direction)), 1e-12)
+        near_seam = seam_distance <= seam_guard_px
+        prefer_left = left_penalty + 1e-8 < right_penalty
+        prefer_right = right_penalty + 1e-8 < left_penalty
+        use_left = np.where(near_seam & prefer_left, True, use_left)
+        use_left = np.where(near_seam & prefer_right, False, use_left)
 
     # The seam can be numerically unstable far outside the image. Fall back to
     # the valid x interval only in that degenerate case.

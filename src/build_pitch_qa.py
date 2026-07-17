@@ -111,7 +111,7 @@ def main():
             foot = np.array([[(float(row["x1"]) + float(row["x2"])) / 2,
                               float(row["y2"])]], dtype=float)
             mapped, _ = transform_piecewise(
-                foot, H_left, H_right, split, length)
+                foot, H_left, H_right, split, length, width)
             x_m, y_m = mapped[0]
             on_pitch = 0 <= x_m <= length and 0 <= y_m <= width
             inside += int(on_pitch)
@@ -128,7 +128,7 @@ def main():
             point_float = np.array([[float(row["x_ref"]),
                                      float(row["y_ref"])]], dtype=float)
             mapped, _ = transform_piecewise(
-                point_float, H_left, H_right, split, length)
+                point_float, H_left, H_right, split, length, width)
             ball_x, ball_y = mapped[0]
             ball_inside = 0 <= ball_x <= length and 0 <= ball_y <= width
             ball_state = "Ball innen" if ball_inside else "BALL AUSSEN"

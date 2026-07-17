@@ -22,7 +22,7 @@ import numpy as np
 from pitch_model import PitchModel
 from piecewise_pitch import transform_piecewise
 
-MARGIN_M = 1.5  # tolerance (m) outside the lines before a point is dropped
+MARGIN_M = 0.5  # small tolerance for foot-point/calibration noise at the line
 
 
 def main():
@@ -130,7 +130,7 @@ def main():
             if piecewise_by_frame is not None:
                 xy, _use_left = transform_piecewise(
                     foot.reshape(-1, 2), transforms[0], transforms[1],
-                    split_x, pitch.laenge)
+                    split_x, pitch.laenge, pitch.breite)
                 x_m, y_m = xy.reshape(2)
             else:
                 transform = (H_frame if direct_H is not None

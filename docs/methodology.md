@@ -162,7 +162,13 @@ half-pitch because the camera is mounted over the middle of a touchline. Six
 manual depth references fit at 1.7 px mean error; strict frame checks keep the
 active players and ball inside while excluding the neighboring games. In the
 14-minute run, 22,872 of 25,150 frames (90.9%) remain after the conservative
-anchor-transition filter.
+anchor-transition filter. Inside a 12 px guard band around the virtual seam,
+both half-pitch solutions are checked against their valid metric rectangles.
+This avoids assigning a point to the wrong homography when Veo dewarping moves
+the seam by a few pixels; outside that narrow band the image-side decision is
+kept unchanged. The production pitch filter allows only 0.5 m outside the exact
+line for foot-point and calibration noise. A previous 1.5 m tolerance retained
+real throw-in positions and was removed after the visual QA.
 
 ## Open threads
 
