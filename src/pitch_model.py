@@ -1,9 +1,9 @@
 """Parametric pitch model for calibration, overlays, and top-down maps.
 
-Coordinate system: x runs along the pitch length (0 = left goal from the camera's
-view), y across the width (0 = far touchline, B = near touchline at the camera).
-All dimensions in meters. The defaults are a small-pitch estimate and get
-corrected once the real field dimensions are known.
+Coordinate system: x runs along the pitch length from the chosen first goal line
+(x=0) to the opposite goal line (x=L). Looking from x=0 towards x=L, y=0 is the
+left touchline and y=B the right touchline. The definition is independent of the
+camera position. All dimensions are in meters.
 
 The German attribute and landmark names are the schema used in the calibration
 JSON files (PitchModel(**cal["pitch"]) and the point labels), so they stay put as
@@ -26,13 +26,42 @@ class PitchModel:
     box_tiefe: float = 9.0      # penalty box: depth in front of the goal (estimated)
     box_breite: float = 24.0    # penalty box: width (estimated)
     kreis_radius: float = 5.0   # center circle radius (estimated)
+    mittellinie: bool = True    # whether a halfway line is actually painted
 
-    def landmarks(self):
-        """Named reference points (name -> model coordinate in meters)."""
+    def landmarks(self, landmark_set="full"):
+        """Named reference points (name -> model coordinate in meters).
+
+        ``endline`` uses names for a camera behind the x=0 goal line. It avoids
+        the ambiguous historic "goal left/right" wording and deliberately does
+        not offer penalty-box points, because this cross-pitch has no own box.
+        ``full`` preserves the names stored in older calibration JSON files.
+        """
         L, B = self.laenge, self.breite
         t2 = self.tor_breite / 2
         bb2 = self.box_breite / 2
         bt = self.box_tiefe
+        if landmark_set == "endline":
+            return {
+                "Nahe Grundlinie: Ecke links": (0, 0),
+                "Nahe Grundlinie: Ecke rechts": (0, B),
+                "Nahes Tor: Pfosten links": (0, B / 2 - t2),
+                "Nahes Tor: Pfosten rechts": (0, B / 2 + t2),
+                "Mittellinie: linke Seitenlinie": (L / 2, 0),
+                "Mittellinie: rechte Seitenlinie": (L / 2, B),
+                "Mittelpunkt": (L / 2, B / 2),
+                "Mittelkreis: Richtung nahes Tor":
+                    (L / 2 - self.kreis_radius, B / 2),
+                "Mittelkreis: Richtung fernes Tor":
+                    (L / 2 + self.kreis_radius, B / 2),
+                "Mittelkreis: links": (L / 2, B / 2 - self.kreis_radius),
+                "Mittelkreis: rechts": (L / 2, B / 2 + self.kreis_radius),
+                "Ferne Grundlinie: Ecke links": (L, 0),
+                "Ferne Grundlinie: Ecke rechts": (L, B),
+                "Fernes Tor: Pfosten links": (L, B / 2 - t2),
+                "Fernes Tor: Pfosten rechts": (L, B / 2 + t2),
+            }
+        if landmark_set != "full":
+            raise ValueError(f"unknown landmark set: {landmark_set}")
         return {
             "Ecke links-fern": (0, 0),
             "Ecke links-nah": (0, B),
@@ -59,17 +88,20 @@ class PitchModel:
         """All lines of the model as a list of polylines (meters)."""
         L, B = self.laenge, self.breite
         bb2, bt = self.box_breite / 2, self.box_tiefe
-        out = [
-            [(0, 0), (L, 0), (L, B), (0, B), (0, 0)],          # outer lines
-            [(L / 2, 0), (L / 2, B)],                          # halfway line
-            [(0, B / 2 - bb2), (bt, B / 2 - bb2),
-             (bt, B / 2 + bb2), (0, B / 2 + bb2)],             # penalty box left
-            [(L, B / 2 - bb2), (L - bt, B / 2 - bb2),
-             (L - bt, B / 2 + bb2), (L, B / 2 + bb2)],         # penalty box right
-        ]
-        angles = np.linspace(0, 2 * np.pi, n_circle)
-        out.append([(L / 2 + self.kreis_radius * np.cos(a),
-                     B / 2 + self.kreis_radius * np.sin(a)) for a in angles])
+        out = [[(0, 0), (L, 0), (L, B), (0, B), (0, 0)]]
+        if self.mittellinie:
+            out.append([(L / 2, 0), (L / 2, B)])
+        if bt > 0 and self.box_breite > 0:
+            out.extend([
+                [(0, B / 2 - bb2), (bt, B / 2 - bb2),
+                 (bt, B / 2 + bb2), (0, B / 2 + bb2)],
+                [(L, B / 2 - bb2), (L - bt, B / 2 - bb2),
+                 (L - bt, B / 2 + bb2), (L, B / 2 + bb2)],
+            ])
+        if self.kreis_radius > 0:
+            angles = np.linspace(0, 2 * np.pi, n_circle)
+            out.append([(L / 2 + self.kreis_radius * np.cos(a),
+                         B / 2 + self.kreis_radius * np.sin(a)) for a in angles])
         return out
 
     def draw_overlay(self, frame, h_pitch_to_px, color=(0, 255, 255), thickness=2):

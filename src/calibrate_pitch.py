@@ -35,17 +35,26 @@ def main():
                         help="NPZ for multi-view calibration")
     parser.add_argument("--frames", default=None,
                         help="comma-separated video frames to switch between, e.g. 23150,23320,23620")
+    parser.add_argument("--anchor-mode", action="store_true",
+                        help="calibrate every requested frame independently; recommended for full videos")
+    parser.add_argument("--landmark-set", choices=("full", "endline"),
+                        default="full",
+                        help="endline = unambiguous names for a camera behind a goal line")
     parser.add_argument("--length", type=float, default=60.0)
     parser.add_argument("--width", type=float, default=40.0)
     parser.add_argument("--goal", type=float, default=5.0)
     parser.add_argument("--box-depth", type=float, default=9.0)
     parser.add_argument("--box-width", type=float, default=24.0)
+    parser.add_argument("--no-box", action="store_true",
+                        help="pitch has no own penalty-box markings")
     parser.add_argument("--circle", type=float, default=5.0)
     parser.add_argument("--name", default="pitch", help="name of the calibration")
     args = parser.parse_args()
 
+    box_depth = 0.0 if args.no_box else args.box_depth
+    box_width = 0.0 if args.no_box else args.box_width
     pitch = PitchModel(laenge=args.length, breite=args.width, tor_breite=args.goal,
-                       box_tiefe=args.box_depth, box_breite=args.box_width,
+                       box_tiefe=box_depth, box_breite=box_width,
                        kreis_radius=args.circle)
 
     input_path = Path(args.video)
@@ -56,16 +65,23 @@ def main():
     view_H_to_ref = []
     view_labels = []
 
-    if args.homographies or args.frames:
-        if not (args.homographies and args.frames):
-            parser.error("--homographies and --frames must be given together")
+    if args.anchor_mode and not args.frames:
+        parser.error("--anchor-mode requires --frames")
+    if args.homographies and not args.frames:
+        parser.error("--homographies requires --frames")
+
+    if args.frames:
         requested = [int(x.strip()) for x in args.frames.split(",") if x.strip()]
-        with np.load(args.homographies) as homographies:
-            H_all = homographies["H"]
-            registered = (homographies["frames"] if "frames" in homographies
-                          else np.arange(len(H_all)))
-            reference_frame = int(homographies["ref"])
-            H_by_frame = {int(f): H.copy() for f, H in zip(registered, H_all)}
+        if args.homographies:
+            with np.load(args.homographies) as homographies:
+                H_all = homographies["H"]
+                registered = (homographies["frames"] if "frames" in homographies
+                              else np.arange(len(H_all)))
+                reference_frame = int(homographies["ref"])
+                H_by_frame = {int(f): H.copy() for f, H in zip(registered, H_all)}
+        else:
+            reference_frame = requested[len(requested) // 2]
+            H_by_frame = {frame_idx: np.eye(3) for frame_idx in requested}
         cap = cv2.VideoCapture(str(input_path))
         for frame_idx in requested:
             if frame_idx not in H_by_frame:
@@ -78,7 +94,10 @@ def main():
             view_H_to_ref.append(H_by_frame[frame_idx])
             view_labels.append(f"Frame {frame_idx}")
         cap.release()
-        print(f"Multi-view mode: {len(view_frames)} frames, A/D switches the view")
+        if args.anchor_mode:
+            print(f"Direct-anchor mode: {len(view_frames)} independent frames")
+        else:
+            print(f"Multi-view mode: {len(view_frames)} frames, A/D switches the view")
     elif input_path.suffix.lower() in image_suffixes:
         frame = cv2.imread(str(input_path))
         if frame is None:
@@ -109,6 +128,10 @@ def main():
     print("left click = set point | A/D = switch image")
     print("right/middle click or S = skip")
     print("Esc = abort the calibration\n")
+    if args.landmark_set == "endline":
+        print("End-line convention: x=0 is the goal line at the camera.")
+        print("Left/right means looking from the camera towards the far goal.")
+        print("Skip every point that is hidden or belongs to another marking set.\n")
 
     points = []
     marked_frames = [image.copy() for image in view_frames]
@@ -128,7 +151,17 @@ def main():
             click["value"] = "skip"
 
     cv2.setMouseCallback(window, on_mouse)
-    for name, meter in pitch.landmarks().items():
+    landmarks = pitch.landmarks(args.landmark_set)
+    if args.anchor_mode:
+        tasks = [(view_index, name, meter)
+                 for view_index in range(len(view_frames))
+                 for name, meter in landmarks.items()]
+    else:
+        tasks = [(None, name, meter) for name, meter in landmarks.items()]
+
+    for locked_view, name, meter in tasks:
+        if locked_view is not None:
+            current_view["index"] = locked_view
         print(f"-> {name} ... ", end="", flush=True)
         click["value"] = None
         while click["value"] is None:
@@ -136,8 +169,9 @@ def main():
             display = cv2.resize(marked_frames[idx], display_size,
                                  interpolation=cv2.INTER_AREA)
             cv2.rectangle(display, (0, 0), (display.shape[1], 48), (0, 0, 0), -1)
+            navigation = "fixed anchor" if locked_view is not None else "A/D switch"
             title = (f"{view_labels[idx]} ({idx + 1}/{len(view_frames)}) | "
-                     f"Click: {name} | A/D switch")
+                     f"Click: {name} | {navigation}")
             title = title.encode("ascii", "replace").decode("ascii")
             cv2.putText(display, title, (12, 30), cv2.FONT_HERSHEY_SIMPLEX,
                         0.72, (0, 255, 255), 2, cv2.LINE_AA)
@@ -145,9 +179,9 @@ def main():
             key = cv2.waitKey(20) & 0xFF
             if key in (ord("s"), ord("S")):
                 click["value"] = "skip"
-            elif key in (ord("a"), ord("A")):
+            elif locked_view is None and key in (ord("a"), ord("A")):
                 current_view["index"] = (current_view["index"] - 1) % len(view_frames)
-            elif key in (ord("d"), ord("D")):
+            elif locked_view is None and key in (ord("d"), ord("D")):
                 current_view["index"] = (current_view["index"] + 1) % len(view_frames)
             elif key == 27:
                 cv2.destroyAllWindows()
@@ -158,9 +192,14 @@ def main():
             continue
         px = [float(click["value"][0]), float(click["value"][1])]
         clicked_view = int(click["value"][2])
-        ref_px = cv2.perspectiveTransform(
-            np.array([[px]], dtype=np.float64), view_H_to_ref[clicked_view]
-        ).reshape(2)
+        if args.anchor_mode:
+            # Direct anchors never share a global pixel coordinate system.
+            # localize_pitch.py consumes clicked_px grouped by clicked_view.
+            ref_px = np.asarray(px, dtype=np.float64)
+        else:
+            ref_px = cv2.perspectiveTransform(
+                np.array([[px]], dtype=np.float64), view_H_to_ref[clicked_view]
+            ).reshape(2)
         points.append({"name": name, "px": ref_px.tolist(),
                        "clicked_px": px, "clicked_view": view_labels[clicked_view],
                        "meter": list(meter)})
@@ -174,6 +213,75 @@ def main():
     cv2.destroyAllWindows()
     if len(points) < 4:
         raise SystemExit(f"only {len(points)} points, at least 4 needed. Aborting.")
+
+    if args.anchor_mode:
+        anchor_quality = []
+        overlays = []
+        for view_index, (image, label) in enumerate(zip(view_frames, view_labels)):
+            view_points = [point for point in points
+                           if point["clicked_view"] == label]
+            if len(view_points) < 4:
+                raise SystemExit(
+                    f"{label}: only {len(view_points)} points; every anchor needs at least 4")
+            src_m = np.array([point["meter"] for point in view_points],
+                             dtype=np.float64).reshape(-1, 1, 2)
+            dst_px = np.array([point["clicked_px"] for point in view_points],
+                              dtype=np.float64).reshape(-1, 1, 2)
+            H_pitch_to_view, _ = cv2.findHomography(src_m, dst_px, 0)
+            if H_pitch_to_view is None:
+                raise SystemExit(f"{label}: homography fit failed (points may be collinear)")
+            projected = cv2.perspectiveTransform(src_m, H_pitch_to_view)
+            errors = np.linalg.norm(projected - dst_px, axis=2).reshape(-1)
+            model_hull = cv2.convexHull(src_m.reshape(-1, 2).astype(np.float32))
+            image_hull = cv2.convexHull(dst_px.reshape(-1, 2).astype(np.float32))
+            model_coverage = (cv2.contourArea(model_hull) /
+                              max(pitch.laenge * pitch.breite, 1e-6))
+            image_coverage = (cv2.contourArea(image_hull) /
+                              max(image.shape[0] * image.shape[1], 1))
+            quality = {
+                "frame": int(label.split()[1]),
+                "points": len(view_points),
+                "mean_reprojection_error_px": float(errors.mean()),
+                "max_reprojection_error_px": float(errors.max()),
+                "model_hull_coverage": float(model_coverage),
+                "image_hull_coverage": float(image_coverage),
+            }
+            anchor_quality.append(quality)
+            overlay = pitch.draw_overlay(image, H_pitch_to_view)
+            safe_label = label.lower().replace(" ", "_")
+            overlay_path = cal_dir / f"{args.name}_check_{safe_label}.jpg"
+            cv2.imwrite(str(overlay_path), overlay)
+            overlays.append(overlay_path)
+            print(f"\n{label}: {len(view_points)} points, "
+                  f"mean error {errors.mean():.1f}px, "
+                  f"model coverage {100 * model_coverage:.1f}%")
+            if model_coverage < 0.08:
+                print("  WARNING: model points cover little pitch area; add near and far points")
+            if image_coverage < 0.005:
+                print("  WARNING: clicked points occupy a very thin image band")
+            if errors.mean() > 12:
+                print("  WARNING: high reprojection error; re-check clicked lines")
+
+        data = {
+            "video": source_video,
+            "frame": reference_frame,
+            "calibration_mode": "direct_anchors",
+            "landmark_set": args.landmark_set,
+            "pitch": pitch.to_dict(),
+            "points": points,
+            "anchor_quality": anchor_quality,
+        }
+        json_path = cal_dir / f"{args.name}.json"
+        json_path.write_text(json.dumps(data, indent=2, ensure_ascii=False),
+                             encoding="utf-8")
+        ref_png = cal_dir / f"{args.name}_reference_frame.png"
+        cv2.imwrite(str(ref_png), view_frames[len(view_frames) // 2])
+        print(f"\nsaved: {json_path}")
+        print("direct-anchor control images:")
+        for path in overlays:
+            print(f"  {path}")
+        print("-> do not run the full video until every outer line matches")
+        return
 
     src_m = np.array([p["meter"] for p in points], dtype=np.float64).reshape(-1, 1, 2)
     dst_px = np.array([p["px"] for p in points], dtype=np.float64).reshape(-1, 1, 2)

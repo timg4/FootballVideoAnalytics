@@ -20,6 +20,7 @@ import cv2
 import numpy as np
 
 from pitch_model import PitchModel
+from piecewise_pitch import transform_piecewise
 
 MARGIN_M = 1.5  # tolerance (m) outside the lines before a point is dropped
 
@@ -34,6 +35,8 @@ def main():
                         help="optional CSV from team_assign.py for team stats")
     parser.add_argument("--fps", type=float, default=29.97,
                         help="frame rate of the source video (default: 29.97)")
+    parser.add_argument("--min-anchor-ratio", type=float, default=2.5,
+                        help="exclude ambiguous piecewise-anchor frames (e.g. 2.5)")
     args = parser.parse_args()
 
     out_dir = Path(__file__).resolve().parent.parent / "data" / "output"
@@ -52,6 +55,13 @@ def main():
     H_px_to_pitch = (np.linalg.inv(np.array(cal["H_pitch_to_px"]))
                      if "H_pitch_to_px" in cal else None)
     with np.load(args.homographies_npz) as homographies:
+        piecewise_direct = "H_px_to_pitch_left" in homographies
+        direct_left = (homographies["H_px_to_pitch_left"].copy()
+                       if piecewise_direct else None)
+        direct_right = (homographies["H_px_to_pitch_right"].copy()
+                        if piecewise_direct else None)
+        split_x = (float(homographies["split_x_m"])
+                   if piecewise_direct else None)
         direct_H = (homographies["H_px_to_pitch"].copy()
                     if "H_px_to_pitch" in homographies else None)
         H_all = (homographies["H"].copy() if "H" in homographies else None)
@@ -59,20 +69,55 @@ def main():
         # older clip files without `frames` stay compatible.
         registered_frames = (homographies["frames"].copy()
                              if "frames" in homographies else None)
-    matrices = direct_H if direct_H is not None else H_all
-    H_by_frame = ({int(frame): H for frame, H in zip(registered_frames, matrices)}
-                  if registered_frames is not None else None)
+        anchor_ratio = (homographies["anchor_ratio"].copy()
+                        if "anchor_ratio" in homographies else None)
+        anchor_reliable = (homographies["anchor_reliable"].copy()
+                           if "anchor_reliable" in homographies else None)
+    if piecewise_direct:
+        piecewise_by_frame = {
+            int(frame): (left, right)
+            for frame, left, right in zip(
+                registered_frames, direct_left, direct_right)
+        }
+        ratio_by_frame = ({int(frame): float(ratio)
+                           for frame, ratio in zip(registered_frames, anchor_ratio)}
+                          if anchor_ratio is not None else None)
+        reliable_by_frame = ({int(frame): bool(reliable)
+                              for frame, reliable in zip(
+                                  registered_frames, anchor_reliable)}
+                             if anchor_reliable is not None else None)
+        H_by_frame = None
+    else:
+        piecewise_by_frame = None
+        ratio_by_frame = None
+        reliable_by_frame = None
+        matrices = direct_H if direct_H is not None else H_all
+        H_by_frame = ({int(frame): H
+                       for frame, H in zip(registered_frames, matrices)}
+                      if registered_frames is not None else None)
 
     fps = args.fps
 
     # foot points -> meters
     per_track = defaultdict(list)
-    n_total = n_on_pitch = 0
+    n_total = n_on_pitch = n_ambiguous = 0
     rows_out = []
     with open(args.tracks_csv, newline="", encoding="utf-8-sig") as f:
         for r in csv.DictReader(f):
             frame_idx = int(r["frame"])
-            if H_by_frame is not None:
+            if piecewise_by_frame is not None:
+                transforms = piecewise_by_frame.get(frame_idx)
+                if transforms is None:
+                    continue
+                if (ratio_by_frame is not None and
+                        ratio_by_frame.get(frame_idx, 0) < args.min_anchor_ratio):
+                    n_ambiguous += 1
+                    continue
+                if (reliable_by_frame is not None and
+                        not reliable_by_frame.get(frame_idx, False)):
+                    n_ambiguous += 1
+                    continue
+            elif H_by_frame is not None:
                 H_frame = H_by_frame.get(frame_idx)
                 if H_frame is None:
                     continue
@@ -82,9 +127,16 @@ def main():
                 H_frame = H_all[frame_idx]
             foot = np.array([[[(float(r["x1"]) + float(r["x2"])) / 2,
                                float(r["y2"])]]], dtype=np.float64)
-            transform = H_frame if direct_H is not None else H_px_to_pitch @ H_frame
-            xy = cv2.perspectiveTransform(foot, transform)
-            x_m, y_m = xy.reshape(2)
+            if piecewise_by_frame is not None:
+                xy, _use_left = transform_piecewise(
+                    foot.reshape(-1, 2), transforms[0], transforms[1],
+                    split_x, pitch.laenge)
+                x_m, y_m = xy.reshape(2)
+            else:
+                transform = (H_frame if direct_H is not None
+                             else H_px_to_pitch @ H_frame)
+                xy = cv2.perspectiveTransform(foot, transform)
+                x_m, y_m = xy.reshape(2)
             on_pitch = (-MARGIN_M <= x_m <= pitch.laenge + MARGIN_M
                         and -MARGIN_M <= y_m <= pitch.breite + MARGIN_M)
             n_total += 1
@@ -100,6 +152,8 @@ def main():
         w.writerow(["frame", "tracker_id", "x_m", "y_m", "on_pitch"])
         w.writerows(rows_out)
     print(f"{n_on_pitch}/{n_total} detections on the pitch -> {csv_path}")
+    if n_ambiguous:
+        print(f"Excluded as anchor-ambiguous: {n_ambiguous} detections")
 
     # heatmaps for all detected people, and optionally split per team
     def write_heatmap(track_ids, path):
