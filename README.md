@@ -185,7 +185,8 @@ and manual aggregation. Their review labels and some comments remain German
 because the annotation workflow was conducted in German; they are research
 prototypes rather than a polished public interface. Optional private player
 aliases are loaded from the gitignored `data/player_names.json`; the committed
-`data/player_names.example.json` documents the format.
+`data/player_names.example.json` documents the format. Pass-review CSV exports
+that can contain those names are ignored as well.
 
 ## Limitations
 
@@ -199,6 +200,11 @@ aliases are loaded from the gitignored `data/player_names.json`; the committed
 - **Metrics cover visible time only.** The validated 14-minute run excludes 9.1%
   of frames around ambiguous anchor transitions. It also cannot count players
   while the follow-cam does not show them.
+- **Ball and pass coverage is incomplete.** The final ball track covers 8,239 of
+  25,150 frames (32.8%) and still contains occasional false detections. Manual
+  review removes false candidates, but cannot recover passes in which the ball
+  was missed. Pass results therefore describe reviewed visible events, not a
+  complete or unbiased full-match pass rate.
 - **Low light.** When there is little light the jerseys desaturate, and ambiguous
   kits (white against gray) stay a weak spot of the team assignment.
 - **The calibration is per camera position.** The two datasets I have come from
@@ -210,3 +216,9 @@ aliases are loaded from the gitignored `data/player_names.json`; the committed
 - Orthophoto for the measurement: [basemap.at](https://basemap.at) from the City
   of Vienna (open government data, 10 cm resolution).
 - Detection models: [Ultralytics YOLOv11](https://docs.ultralytics.com).
+
+## License
+
+The project code is available under the [MIT License](LICENSE). Video footage,
+model weights, generated outputs, and third-party datasets retain their own
+respective terms and are not relicensed by this repository.

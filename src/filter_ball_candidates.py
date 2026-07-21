@@ -16,6 +16,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from piecewise_pitch import transform_piecewise
+
 
 def read_optional_mapping(path, value_column):
     if not path:
@@ -36,7 +38,7 @@ def main():
     parser.add_argument("positions_csv")
     parser.add_argument("--team-assignments")
     parser.add_argument("--player-mapping")
-    parser.add_argument("--margin-m", type=float, default=1.5)
+    parser.add_argument("--margin-m", type=float, default=0.5)
     parser.add_argument("--static-cell-m", type=float, default=0.25)
     parser.add_argument("--static-block-seconds", type=float, default=10.0)
     parser.add_argument("--static-min-blocks", type=int, default=8)
@@ -51,12 +53,29 @@ def main():
 
     with np.load(args.localization_npz) as data:
         frames = data["frames"].astype(int)
-        matrices = data["H_px_to_pitch"].copy()
-    H_by_frame = {int(frame): matrix for frame, matrix in zip(frames, matrices)}
+        piecewise = "H_px_to_pitch_left" in data
+        if piecewise:
+            left_all = data["H_px_to_pitch_left"].copy()
+            right_all = data["H_px_to_pitch_right"].copy()
+            reliable_all = (data["anchor_reliable"].astype(bool)
+                            if "anchor_reliable" in data
+                            else np.ones(len(frames), dtype=bool))
+            transforms_by_frame = {
+                int(frame): (left, right, bool(reliable))
+                for frame, left, right, reliable in zip(
+                    frames, left_all, right_all, reliable_all)
+            }
+        else:
+            matrices = data["H_px_to_pitch"].copy()
+            H_by_frame = {
+                int(frame): matrix for frame, matrix in zip(frames, matrices)
+            }
 
     calibration = json.loads(Path(args.calibration_json).read_text(encoding="utf-8"))
     length = float(calibration["pitch"]["laenge"])
     width = float(calibration["pitch"]["breite"])
+    split_x = (float(calibration["piecewise"]["split_x_m"])
+               if piecewise else None)
 
     team_of = read_optional_mapping(args.team_assignments, "team")
     player_of = read_optional_mapping(args.player_mapping,
@@ -75,12 +94,21 @@ def main():
         for row in csv.DictReader(f):
             total += 1
             frame = int(row["frame"])
-            matrix = H_by_frame.get(frame)
-            if matrix is None:
-                continue
             point = np.array([[[float(row["x_ref"]), float(row["y_ref"])]]],
                              dtype=np.float64)
-            x_m, y_m = cv2.perspectiveTransform(point, matrix).reshape(2)
+            if piecewise:
+                transforms = transforms_by_frame.get(frame)
+                if transforms is None or not transforms[2]:
+                    continue
+                mapped, _ = transform_piecewise(
+                    point.reshape(-1, 2), transforms[0], transforms[1],
+                    split_x, length, width)
+                x_m, y_m = mapped.reshape(2)
+            else:
+                matrix = H_by_frame.get(frame)
+                if matrix is None:
+                    continue
+                x_m, y_m = cv2.perspectiveTransform(point, matrix).reshape(2)
             if not (np.isfinite(x_m) and np.isfinite(y_m)):
                 continue
             on_pitch = (-args.margin_m <= x_m <= length + args.margin_m and

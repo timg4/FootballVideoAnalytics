@@ -192,7 +192,12 @@ stitching plus a short manual assignment against the real roster.
 **Ball and passes.** The ball is small, fast, and often occluded, so the detection
 is patchy. I therefore treat the ball track as a candidate list from which
 possession and pass candidates can be derived, but which still needs a visual check
-before it becomes a pass statistic. A later advantage: for the highlight clips the
+before it becomes a pass statistic. With the final piecewise geometry the track
+covers 8,239 of 25,150 frames (32.8%) and still contains occasional false
+detections. Manual review can remove false candidates, but it cannot recover a
+pass when the ball was never detected. The reported pass results are therefore a
+reviewed visible subset, not a complete or unbiased full-match pass rate. A later
+advantage: for the highlight clips the
 Veo labels (shot, goal) are already in the filenames, which gives free ground truth
 for a shot map.
 

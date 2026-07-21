@@ -7,6 +7,7 @@ __pycache__/
 data/videos/
 data/output/
 data/player_names.json
+data/calibration/*_pass_kandidaten_review.csv
 *.mp4
 *.mov
 *.avi
