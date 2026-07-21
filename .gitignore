@@ -3,7 +3,7 @@
 __pycache__/
 *.pyc
 
-# Videos & große Dateien (nie ins Git!)
+# videos and large files (never in git!)
 data/videos/
 data/output/
 data/player_names.json
@@ -13,7 +13,7 @@ data/calibration/*_pass_kandidaten_review.csv
 *.avi
 *.mkv
 
-# Modell-Gewichte
+# model weights
 *.pt
 *.onnx
 
